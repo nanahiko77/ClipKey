@@ -1,0 +1,55 @@
+name: ClipKey
+options:
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  ClipKey:
+    type: application
+    platform: iOS
+    sources: [App]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ban.clipkey
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: ClipKey
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - target: ClipKeyboard
+        embed: true
+  ClipKeyboard:
+    type: app-extension
+    platform: iOS
+    sources: [Keyboard]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ban.clipkey.keyboard
+    info:
+      path: Keyboard/Info.plist
+      properties:
+        CFBundleDisplayName: 클립보드
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: ko-KR
+            RequestsOpenAccess: true
+schemes:
+  ClipKey:
+    build:
+      targets:
+        ClipKey: all
