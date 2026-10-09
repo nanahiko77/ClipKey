@@ -1319,6 +1319,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// 간격 키를 위로 밀면 지금 줄의 처음, 아래로 밀면 지금 줄의 끝으로 (줄바꿈 기준).
+    /// 이미 줄 처음이면 윗줄 끝으로, 이미 줄 끝이면 아랫줄 처음으로 넘어간다 (계속 밀면 한 줄씩 올라가고 내려간다).
     /// 키보드는 화면의 줄 모양을 알 수 없어서, 칸 위치를 맞춰 윗줄·아랫줄로 가는 것보다 이쪽이 늘 정확하다.
     func moveCursorLines(_ lines: Int) {
         guard lines != 0 else { return }
@@ -1327,11 +1328,19 @@ final class KeyboardViewController: UIInputViewController {
         if lines < 0 {
             let before = proxy.documentContextBeforeInput ?? ""
             let col = before.lastIndex(of: "\n").map { before.distance(from: before.index(after: $0), to: before.endIndex) } ?? before.count
-            if col > 0 { proxy.adjustTextPosition(byCharacterOffset: -col) }
+            if col > 0 {
+                proxy.adjustTextPosition(byCharacterOffset: -col)
+            } else if !before.isEmpty {
+                proxy.adjustTextPosition(byCharacterOffset: -1)      // 이미 줄 맨 앞이면 윗줄 맨 끝으로
+            }
         } else {
             let after = proxy.documentContextAfterInput ?? ""
             let rest = after.firstIndex(of: "\n").map { after.distance(from: after.startIndex, to: $0) } ?? after.count
-            if rest > 0 { proxy.adjustTextPosition(byCharacterOffset: rest) }
+            if rest > 0 {
+                proxy.adjustTextPosition(byCharacterOffset: rest)
+            } else if !after.isEmpty {
+                proxy.adjustTextPosition(byCharacterOffset: 1)       // 이미 줄 맨 끝이면 아랫줄 맨 앞으로
+            }
         }
         ctxCache = nil
     }
