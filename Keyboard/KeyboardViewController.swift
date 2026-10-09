@@ -123,7 +123,7 @@ final class KeyboardViewController: UIInputViewController {
     // 밀어서 연속 입력 중인 키
     weak var slideCurrent: KeyButton?
     var sliding = false
-    var toolbarEditList: ToolbarEditList?
+    var toolbarEditList: ToolbarEditor?
     let divider = UIView()
     let keyArea = KeyArea()
     let suggestScroll = UIScrollView()

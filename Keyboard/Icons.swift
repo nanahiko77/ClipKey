@@ -64,6 +64,9 @@ enum Icon {
             stroke(poly([(12, 5), (12, 19)]), line)
             stroke(poly([(5, 12), (19, 12)]), line)
 
+        case "minus":
+            stroke(poly([(6, 12), (18, 12)]), line)
+
         case "smile":
             stroke(UIBezierPath(ovalIn: CGRect(x: 3, y: 3, width: 18, height: 18)), line)
             let m = UIBezierPath()
