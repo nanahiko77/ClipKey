@@ -108,7 +108,7 @@ struct Theme {
     static let dark = Theme(
         bg: hex(0x1B1C1F), key: hex(0x4A4D54), funcKey: hex(0x2E3035), text: hex(0xF2F3F5),
         muted: hex(0xA9AEB7), divider: hex(0x3A3D43), accent: hex(0xE4E6EA), onAccent: hex(0x16181C),
-        pinBg: hex(0x3A4660), danger: hex(0xF2857D), onDanger: hex(0x16181C), row: hex(0x2E3035),
+        pinBg: hex(0x3A4660), danger: hex(0xE5453B), onDanger: hex(0xFFFFFF), row: hex(0x2E3035),
         hint: hex(0xC3C8D0))
 }
 
