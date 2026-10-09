@@ -850,6 +850,8 @@ final class KeyboardViewController: UIInputViewController {
             let slot = UIView()
             slot.translatesAutoresizingMaskIntoConstraints = false
             slot.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            // 칸 너비는 추천 영역의 1/3. 화면에 붙인 뒤에 걸어야 한다 (먼저 걸면 키보드가 종료된다)
+            suggestStack.addArrangedSubview(slot)
             slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0).isActive = true
             if let i = index {
                 let b = suggestionButton(items[i], index: i, slot: true, best: pos == 1)
@@ -862,7 +864,6 @@ final class KeyboardViewController: UIInputViewController {
                 line.trailingAnchor.constraint(equalTo: slot.trailingAnchor).isActive = true
                 line.centerYAnchor.constraint(equalTo: slot.centerYAnchor).isActive = true
             }
-            suggestStack.addArrangedSubview(slot)
         }
         for i in rest {
             suggestStack.addArrangedSubview(separatorLine(height: 20))

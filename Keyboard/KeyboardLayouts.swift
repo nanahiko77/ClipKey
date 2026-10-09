@@ -375,7 +375,7 @@ extension KeyboardViewController {
         var fourth: [UIView] = [pageKey]
         for k in keys(p[3]) { fourth.append(k) }
         let row4 = hstack(fourth)
-        let row5 = hstack([spaceKey(), fixed(backspaceKey(), 60), fixed(returnKey(), 76)], equal: false)
+        let row5 = hstack([spaceKey(), fixed(backspaceKey(), 59), fixed(returnKey(), 45)], equal: false)
         fillRows([row1, row2, row3, row4, row5], spacing: 6, insets: UIEdgeInsets(top: 6, left: 4, bottom: 8, right: 4))
     }
 }
