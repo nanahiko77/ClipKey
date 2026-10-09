@@ -496,6 +496,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 settingRow("한글 자판", segment(["나랏글", "두벌식"], selected: settings.hangulLayout, tag: 0)),
                 settingRow("보조키 표시 (꾹 눌러 숫자·기호)", toggle(settings.naraHints, tag: 10)),
                 settingRow("키 글자 크기", segment(["작게", "보통", "크게"], selected: settings.keyFontSize, tag: 5)),
+                settingRow("나랏글 문장부호 키", segment([". , ? !", "? ! . ,"], selected: settings.punctQuestionFirst ? 1 : 0, tag: 6)),
                 settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
                 settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
             ], nil),
@@ -547,6 +548,8 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             rebuild()
         case 5:
             settings.keyFontSize = s.selectedSegmentIndex
+        case 6:
+            settings.punctQuestionFirst = s.selectedSegmentIndex == 1
         case 3:
             settings.doubleSpace = s.selectedSegmentIndex
         case 4:

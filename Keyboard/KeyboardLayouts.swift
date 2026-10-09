@@ -637,7 +637,7 @@ extension KeyboardViewController {
         // 123 은 ㅣ 옆이라 잘못 눌리기 쉬워서 왼쪽 가장자리 9pt 는 ㅣ 로 본다
         let num = rounded(numKey("123"))
         num.guardInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 0)
-        let punctAndNum = hstack([num, rounded(makeKey(".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
+        let punctAndNum = hstack([num, rounded(makeKey(settings.punctQuestionFirst ? "?!.," : ".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
         let row3 = row([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9")], punctAndNum)
         // 맨 아래 줄은 손가락이 위로 닿기 쉬워서, 키 위쪽 5pt 까지 이 줄의 키로 받는다
         let bottom = [rounded(makeKey("획추가", id: "stroke", font: 17)), jamo("ㅡ", "ㅡ", "0"),

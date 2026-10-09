@@ -68,6 +68,13 @@ final class Settings {
         get { min(max(d.integer(forKey: "keyFontSize"), 0), 2) }
         set { d.set(min(max(newValue, 0), 2), forKey: "keyFontSize") }
     }
+    /// 나랏글 문장부호 키: false 면 . , ? !  true 면 ? ! . ,
+    var punctQuestionFirst: Bool {
+        get { d.bool(forKey: "punctQuestionFirst") }
+        set { d.set(newValue, forKey: "punctQuestionFirst") }
+    }
+    var puncts: [String] { punctQuestionFirst ? ["?", "!", ".", ","] : [".", ",", "?", "!"] }
+
     /// 작게 = 예전 보통, 보통 = 예전 크게, 크게 = 그보다 더 크게
     var keyFontScale: CGFloat { [1.0, 1.15, 1.3][keyFontSize] }
 
@@ -275,8 +282,8 @@ struct Theme {
         muted: hex(0xA9AEB7), divider: hex(0x3A3D43), accent: hex(0xE4E6EA), onAccent: hex(0x16181C),
         pinBg: hex(0x3A4660), danger: hex(0xE5453B), onDanger: hex(0xFFFFFF), row: hex(0x2E3035),
         hint: hex(0xC3C8D0),
-        // 다크: 글자 키는 기본 키보드처럼 조금 더 어둡게, 기능 키와 줄바꿈은 같은 색으로 검정에 가깝게
-        letterKey: hex(0x3A3C41), fnKey: hex(0x1F2023))
+        // 다크: 글자 키는 기본 키보드(iOS 26)와 같은 #454545, 기능 키와 줄바꿈은 그보다 어둡게
+        letterKey: hex(0x454545), fnKey: hex(0x2E2E2E))
 }
 
 // MARK: - 클립보드 기록

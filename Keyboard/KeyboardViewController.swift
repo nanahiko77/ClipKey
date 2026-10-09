@@ -471,7 +471,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(isLandscape)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
@@ -812,13 +812,13 @@ final class KeyboardViewController: UIInputViewController {
         case "punct":
             if sameKey && gap < 1.2 {
                 docDelete()
-                punctIndex = (punctIndex + 1) % KeyboardViewController.puncts.count
+                punctIndex = (punctIndex + 1) % settings.puncts.count
             } else {
                 resetComposer()
                 learn(currentWord())
                 punctIndex = 0
             }
-            docInsert(KeyboardViewController.puncts[punctIndex])
+            docInsert(settings.puncts[min(punctIndex, settings.puncts.count - 1)])
         case "stroke":
             composer.nara = true
             let out = composer.transformLast(HangulComposer.strokeTable)
