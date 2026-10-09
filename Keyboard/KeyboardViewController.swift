@@ -405,7 +405,7 @@ final class KeyboardViewController: UIInputViewController {
             }
         }
         let name = shift == .locked ? "capslock.fill" : (shift == .once ? "shift.fill" : "shift")
-        shiftKey?.setImage(UIImage(systemName: name), for: .normal)
+        shiftKey?.setImage(Icon.key(name), for: .normal)
     }
 
     func autoCapIfNeeded() {
@@ -607,9 +607,7 @@ final class KeyboardViewController: UIInputViewController {
         var title = clip.text.replacingOccurrences(of: "\n", with: " ")
         if title.count > 9 { title = String(title.prefix(9)) + "…" }
         b.setTitle(" " + title, for: .normal)
-        let chipConfig = UIImage.SymbolConfiguration(pointSize: 11)
-        b.setImage(UIImage(systemName: "clipboard", withConfiguration: chipConfig)
-                   ?? UIImage(systemName: "doc.on.clipboard", withConfiguration: chipConfig), for: .normal)
+        b.setImage(Icon.image("clipboard", size: 14, line: 2), for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 13)
         b.tintColor = theme.text
         b.setTitleColor(theme.text, for: .normal)

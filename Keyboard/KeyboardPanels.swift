@@ -420,8 +420,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
             let del = UIButton(type: .system)
             del.frame = CGRect(x: chipWidth - 32, y: 4, width: 28, height: 28)
-            del.setImage(UIImage(systemName: "xmark",
-                                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)), for: .normal)
+            del.setImage(Icon.image("xmark", size: 14, line: 2.5), for: .normal)
             del.tintColor = theme.text
             del.backgroundColor = theme.bg
             del.layer.cornerRadius = 14

@@ -185,8 +185,6 @@ final class ClipCell: UITableViewCell {
     let cancelButton = UIButton(type: .system)
     let confirmButton = UIButton(type: .system)
 
-    static let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-
     var onPin: (() -> Void)?
     var onDelete: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -219,7 +217,7 @@ final class ClipCell: UITableViewCell {
             b.heightAnchor.constraint(equalToConstant: 40).isActive = true
             b.layer.cornerRadius = 8
         }
-        deleteButton.setImage(UIImage(systemName: "trash", withConfiguration: ClipCell.iconConfig), for: .normal)
+        deleteButton.setImage(Icon.image("trash", size: 16, line: 1.75), for: .normal)
 
         let stack = UIStackView(arrangedSubviews: [pinButton, label, deleteButton, cancelButton, confirmButton])
         stack.axis = .horizontal
@@ -270,9 +268,7 @@ final class ClipCell: UITableViewCell {
         }
 
         // 압정 모양을 살짝 기울여서, 켜면 색을 채운다
-        pinButton.setImage(UIImage(systemName: clip.pinned ? "pin.fill" : "pin",
-                                   withConfiguration: ClipCell.iconConfig), for: .normal)
-        pinButton.imageView?.transform = CGAffineTransform(rotationAngle: .pi / 6)
+        pinButton.setImage(Icon.image(clip.pinned ? "pin.fill" : "pin", size: 20, line: 1.75), for: .normal)
         pinButton.tintColor = clip.pinned ? theme.accent : theme.muted
         pinButton.backgroundColor = clip.pinned ? theme.pinBg : .clear
         pinButton.accessibilityLabel = clip.pinned ? "고정 해제" : "고정"

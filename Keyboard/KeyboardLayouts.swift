@@ -37,12 +37,8 @@ extension KeyboardViewController {
 
     /// 상단바와 패널에 쓰는 작은 아이콘
     func toolIcon(_ name: String) -> UIImage? {
-        let config = UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        if name == "clipboard" {
-            return UIImage(systemName: "clipboard", withConfiguration: config)
-                ?? UIImage(systemName: "doc.on.clipboard", withConfiguration: config)
-        }
-        return UIImage(systemName: name, withConfiguration: config)
+        if name.hasPrefix("chevron") { return Icon.image(name, size: 20, line: 2) }
+        return Icon.image(name, size: 18, line: 1.75)
     }
 
     func toolbarTitle(_ text: String) -> UILabel {
@@ -176,12 +172,7 @@ extension KeyboardViewController {
                  fallback: String = "") -> KeyButton {
         let k = KeyButton()
         k.id = id
-        if let img = UIImage(systemName: symbol) {
-            k.setImage(img, for: .normal)
-        } else {
-            k.setTitle(fallback, for: .normal)
-            k.titleLabel?.font = .systemFont(ofSize: 15)
-        }
+        k.setImage(Icon.key(symbol), for: .normal)
         style(k, fn: fn)
         if accent {
             k.backgroundColor = theme.accent
