@@ -14,7 +14,11 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         disarm()
         armedButton = b
         armedTitle = b.title(for: .normal)
+        armedBackground = b.backgroundColor
+        armedColor = b.titleColor(for: .normal)
         b.setTitle(title, for: .normal)
+        b.backgroundColor = theme.danger
+        b.setTitleColor(theme.onDanger, for: .normal)
         armTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
             self?.disarm()
         }
@@ -24,9 +28,15 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     func disarm() {
         armTimer?.invalidate()
         armTimer = nil
-        if let b = armedButton, let t = armedTitle { b.setTitle(t, for: .normal) }
+        if let b = armedButton, let t = armedTitle {
+            b.setTitle(t, for: .normal)
+            b.backgroundColor = armedBackground
+            b.setTitleColor(armedColor, for: .normal)
+        }
         armedButton = nil
         armedTitle = nil
+        armedBackground = nil
+        armedColor = nil
     }
 
     func emptyLabel(_ text: String) -> UILabel {
@@ -179,7 +189,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     @objc func clearClipsTapped(_ sender: UIButton) {
-        guard confirmed(sender, title: "삭제 확인") else { return }
+        guard confirmed(sender, title: "삭제") else { return }
         store.clearUnpinned()          // 고정한 항목은 남긴다
         freshClip = nil
         reloadClips()
@@ -358,7 +368,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     @objc func clearWordsTapped(_ sender: UIButton) {
-        guard confirmed(sender, title: "삭제 확인") else { return }
+        guard confirmed(sender, title: "삭제") else { return }
         words.clear()
         if panel == .words { buildBody() }
     }

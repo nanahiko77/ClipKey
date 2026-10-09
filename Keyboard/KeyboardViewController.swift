@@ -63,6 +63,8 @@ final class KeyboardViewController: UIInputViewController {
     var undoTimer: Timer?
     var armedButton: UIButton?
     var armedTitle: String?
+    var armedBackground: UIColor?
+    var armedColor: UIColor?
     var armTimer: Timer?
     var wordList: [String] = []
     var previewClip: Clip?
@@ -81,7 +83,8 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.spacing = 4
         toolbar.alignment = .center
         toolbar.isLayoutMarginsRelativeArrangement = true
-        toolbar.layoutMargins = UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
+        // 위쪽 여백은 줄이고, 자판과의 사이를 넓힌다
+        toolbar.layoutMargins = UIEdgeInsets(top: 1, left: 6, bottom: 14, right: 6)
 
         suggestStack.axis = .horizontal
         suggestStack.alignment = .center
@@ -108,7 +111,7 @@ final class KeyboardViewController: UIInputViewController {
             toolbar.topAnchor.constraint(equalTo: view.topAnchor),
             toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 45),
+            toolbar.heightAnchor.constraint(equalToConstant: 51),
             divider.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -442,6 +445,31 @@ final class KeyboardViewController: UIInputViewController {
         deleteTimer = nil
     }
 
+    /// 입력창의 글자를 전부 지운다. 커서 뒤쪽 글자도 지우려고 먼저 커서를 끝으로 옮긴다.
+    func deleteAll() {
+        stopDelete()
+        resetComposer()
+        if let after = textDocumentProxy.documentContextAfterInput, !after.isEmpty {
+            textDocumentProxy.adjustTextPosition(byCharacterOffset: after.count)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            self?.deleteAllPass(0)
+        }
+    }
+
+    /// 키보드는 커서 앞 글자를 한 번에 일부만 볼 수 있어서, 남은 것이 없을 때까지 나눠 지운다
+    func deleteAllPass(_ pass: Int) {
+        guard pass < 40, let before = textDocumentProxy.documentContextBeforeInput, !before.isEmpty else {
+            lastKeyID = "⌫"
+            refreshSuggestions()
+            return
+        }
+        for _ in 0..<before.count { textDocumentProxy.deleteBackward() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            self?.deleteAllPass(pass + 1)
+        }
+    }
+
     // MARK: - 툴바 동작
 
     @objc func langTapped() {
@@ -573,8 +601,9 @@ final class KeyboardViewController: UIInputViewController {
         var title = clip.text.replacingOccurrences(of: "\n", with: " ")
         if title.count > 9 { title = String(title.prefix(9)) + "…" }
         b.setTitle(" " + title, for: .normal)
-        b.setImage(UIImage(systemName: "doc.on.clipboard",
-                           withConfiguration: UIImage.SymbolConfiguration(pointSize: 11)), for: .normal)
+        let chipConfig = UIImage.SymbolConfiguration(pointSize: 11)
+        b.setImage(UIImage(systemName: "clipboard", withConfiguration: chipConfig)
+                   ?? UIImage(systemName: "doc.on.clipboard", withConfiguration: chipConfig), for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 13)
         b.tintColor = theme.text
         b.setTitleColor(theme.text, for: .normal)

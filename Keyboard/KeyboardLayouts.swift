@@ -14,7 +14,7 @@ extension KeyboardViewController {
             b.titleLabel?.font = .systemFont(ofSize: 15)
         }
         if let symbol = symbol {
-            b.setImage(UIImage(systemName: symbol), for: .normal)
+            b.setImage(toolIcon(symbol), for: .normal)
         }
         let fg = color ?? (active ? theme.onAccent : theme.text)
         b.tintColor = fg
@@ -26,10 +26,23 @@ extension KeyboardViewController {
             b.widthAnchor.constraint(equalToConstant: width).isActive = true
         } else {
             b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+            // 글자 길이만큼만 차지하고, 옆의 제목 때문에 늘어나지 않게 한다
+            b.setContentHuggingPriority(.required, for: .horizontal)
+            b.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         b.accessibilityLabel = label ?? title
         b.addTarget(self, action: action, for: .touchUpInside)
         return b
+    }
+
+    /// 상단바와 패널에 쓰는 작은 아이콘
+    func toolIcon(_ name: String) -> UIImage? {
+        let config = UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        if name == "clipboard" {
+            return UIImage(systemName: "clipboard", withConfiguration: config)
+                ?? UIImage(systemName: "doc.on.clipboard", withConfiguration: config)
+        }
+        return UIImage(systemName: name, withConfiguration: config)
     }
 
     func toolbarTitle(_ text: String) -> UILabel {
@@ -62,7 +75,7 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(langB)
             toolbar.addArrangedSubview(toolButton("123", width: 44, active: panel == .symbols,
                                                   label: "숫자와 기호", action: #selector(numTapped)))
-            toolbar.addArrangedSubview(toolButton(symbol: "doc.on.clipboard", width: 40, plain: true,
+            toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
                                                   color: theme.accent, label: "클립보드 열기",
                                                   action: #selector(clipTapped)))
             toolbar.addArrangedSubview(suggestScroll)
@@ -75,7 +88,7 @@ extension KeyboardViewController {
         case .clipboard:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
-            toolbar.addArrangedSubview(toolButton(symbol: "doc.on.clipboard", width: 40, active: true,
+            toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, active: true,
                                                   label: "클립보드 닫기", action: #selector(backToKeys)))
             toolbar.addArrangedSubview(toolbarTitle("클립보드"))
             let clear = toolButton("전체 삭제", plain: true, color: theme.danger, action: #selector(clearClipsTapped(_:)))
@@ -86,14 +99,14 @@ extension KeyboardViewController {
         case .settings:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
-            toolbar.addArrangedSubview(toolButton(symbol: "doc.on.clipboard", width: 40, plain: true,
+            toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
                                                   label: "클립보드 열기", action: #selector(clipTapped)))
             toolbar.addArrangedSubview(toolbarTitle("설정"))
             toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, active: true,
                                                   label: "설정 닫기", action: #selector(clipTapped)))
         case .words:
-            let back = toolButton(" 설정", symbol: "chevron.left", label: "설정으로 돌아가기", action: #selector(openSettings))
-            toolbar.addArrangedSubview(back)
+            toolbar.addArrangedSubview(toolButton(symbol: "chevron.left", width: 44,
+                                                  label: "설정으로 돌아가기", action: #selector(openSettings)))
             toolbar.addArrangedSubview(toolbarTitle("학습한 단어"))
             let clear = toolButton("모두 지우기", plain: true, color: theme.danger, action: #selector(clearWordsTapped(_:)))
             clear.titleLabel?.font = .boldSystemFont(ofSize: 14)
@@ -196,6 +209,13 @@ extension KeyboardViewController {
             self?.startDelete()
         }
         k.onUp = { [weak self] in self?.stopDelete() }
+        // 누르고 있으면 "전체 삭제" 말풍선이 뜨고, 그 위로 밀어서 떼면 전부 지운다
+        k.altTitle = "전체 삭제"
+        k.altBackground = theme.text
+        k.altText = theme.bg
+        k.altHoverBackground = theme.danger
+        k.altHoverText = theme.onDanger
+        k.onAlt = { [weak self] in self?.deleteAll() }
         return k
     }
 
@@ -285,8 +305,8 @@ extension KeyboardViewController {
                            rounded(spaceKey())], spacing: 6)
         let row3 = hstack([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9"),
                            rounded(makeKey(". , ? !", id: "punct", fn: true, font: 18))], spacing: 6)
-        let row4 = hstack([rounded(makeKey("쌍자음", id: "double", font: 16)), jamo("ㅡ", "ㅡ", "0"),
-                           rounded(makeKey("획추가", id: "stroke", font: 16)), rounded(returnKey())], spacing: 6)
+        let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
+                           rounded(makeKey("쌍자음", id: "double", font: 16)), rounded(returnKey())], spacing: 6)
         fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
     }
 

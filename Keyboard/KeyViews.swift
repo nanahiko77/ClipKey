@@ -14,9 +14,20 @@ final class KeyButton: UIButton {
     var onDown: (() -> Void)?
     var onUp: (() -> Void)?
 
+    /// 꾹 누르고 있으면 키 위에 뜨는 큰 말풍선. 손가락을 그 위로 밀어서 떼면 onAlt 가 실행된다.
+    var altTitle: String?
+    var onAlt: (() -> Void)?
+    var altBackground: UIColor = .black
+    var altText: UIColor = .white
+    var altHoverBackground: UIColor = .red
+    var altHoverText: UIColor = .white
+
     private let hintLabel = UILabel()
     private var holdTimer: Timer?
     private var bubble: UILabel?
+    private var altTimer: Timer?
+    private var altBubble: UILabel?
+    private var altHover = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -49,6 +60,12 @@ final class KeyButton: UIButton {
 
     @objc private func didTouchDown() {
         onDown?()
+        if altTitle != nil {
+            altTimer?.invalidate()
+            let a = Timer(timeInterval: 0.6, repeats: false) { [weak self] _ in self?.showAlt() }
+            RunLoop.main.add(a, forMode: .common)
+            altTimer = a
+        }
         guard hintText != nil else { return }
         holdTimer?.invalidate()
         let t = Timer(timeInterval: 0.35, repeats: false) { [weak self] _ in self?.showBubble() }
@@ -59,8 +76,11 @@ final class KeyButton: UIButton {
     @objc private func didTouchUp() {
         holdTimer?.invalidate()
         holdTimer = nil
+        let alt = endAlt()
         onUp?()
-        if bubble != nil, let hint = hintText {
+        if alt {
+            onAlt?()
+        } else if bubble != nil, let hint = hintText {
             hideBubble()
             onHint?(hint)
         } else {
@@ -73,7 +93,53 @@ final class KeyButton: UIButton {
         holdTimer?.invalidate()
         holdTimer = nil
         hideBubble()
+        let alt = endAlt()
         onUp?()
+        if alt { onAlt?() }
+    }
+
+    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        let result = super.continueTracking(touch, with: event)
+        if let b = altBubble, let host = bubbleHost {
+            let inside = b.frame.insetBy(dx: -12, dy: -12).contains(touch.location(in: host))
+            if inside != altHover {
+                altHover = inside
+                b.backgroundColor = inside ? altHoverBackground : altBackground
+                b.textColor = inside ? altHoverText : altText
+            }
+        }
+        return result
+    }
+
+    private func showAlt() {
+        guard let host = bubbleHost, let title = altTitle, altBubble == nil else { return }
+        let f = convert(bounds, to: host)
+        let w: CGFloat = 92
+        let h: CGFloat = 40
+        let x = max(2, min(f.maxX - w, host.bounds.width - w - 2))
+        let y = max(0, f.minY - h - 4)
+        let label = UILabel(frame: CGRect(x: x, y: y, width: w, height: h))
+        label.text = title
+        label.textAlignment = .center
+        label.font = .boldSystemFont(ofSize: 15)
+        label.textColor = altText
+        label.backgroundColor = altBackground
+        label.layer.cornerRadius = 8
+        label.layer.masksToBounds = true
+        host.addSubview(label)
+        altBubble = label
+        altHover = false
+    }
+
+    /// 말풍선을 닫고, 손가락이 말풍선 위에 있었는지 돌려준다
+    private func endAlt() -> Bool {
+        altTimer?.invalidate()
+        altTimer = nil
+        let fire = altBubble != nil && altHover
+        altBubble?.removeFromSuperview()
+        altBubble = nil
+        altHover = false
+        return fire
     }
 
     private func showBubble() {
@@ -113,6 +179,8 @@ final class ClipCell: UITableViewCell {
     let cancelButton = UIButton(type: .system)
     let confirmButton = UIButton(type: .system)
 
+    static let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+
     var onPin: (() -> Void)?
     var onDelete: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -145,7 +213,7 @@ final class ClipCell: UITableViewCell {
             b.heightAnchor.constraint(equalToConstant: 40).isActive = true
             b.layer.cornerRadius = 8
         }
-        deleteButton.setImage(UIImage(systemName: "trash"), for: .normal)
+        deleteButton.setImage(UIImage(systemName: "trash", withConfiguration: ClipCell.iconConfig), for: .normal)
 
         let stack = UIStackView(arrangedSubviews: [pinButton, label, deleteButton, cancelButton, confirmButton])
         stack.axis = .horizontal
@@ -196,7 +264,9 @@ final class ClipCell: UITableViewCell {
         }
 
         // 압정 모양을 살짝 기울여서, 켜면 색을 채운다
-        pinButton.setImage(UIImage(systemName: clip.pinned ? "pin.fill" : "pin"), for: .normal)
+        pinButton.setImage(UIImage(systemName: clip.pinned ? "pin.fill" : "pin",
+                                   withConfiguration: ClipCell.iconConfig), for: .normal)
+        pinButton.imageView?.transform = CGAffineTransform(rotationAngle: .pi / 6)
         pinButton.tintColor = clip.pinned ? theme.accent : theme.muted
         pinButton.backgroundColor = clip.pinned ? theme.pinBg : .clear
         pinButton.accessibilityLabel = clip.pinned ? "고정 해제" : "고정"
