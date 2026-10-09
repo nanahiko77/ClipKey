@@ -1,13 +1,21 @@
 name: Build IPA
 
+# 빌드는 직접 실행할 때만 돈다 (Actions > Build IPA > Run workflow, 또는 gh workflow run).
+# 빌드가 끝나면 GitHub 릴리스에 ipa 와 SideStore 소스(source.json)를 올린다.
+# SideStore 에 아래 소스 주소를 한 번 등록해 두면 새 빌드가 업데이트로 뜬다.
+#   https://github.com/nanahiko77/ClipKey/releases/latest/download/source.json
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: macos-latest
+    env:
+      # 빌드 번호는 실행 번호를 쓴다. 매번 커지므로 SideStore 가 새 버전으로 알아본다.
+      BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +32,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -42,3 +51,22 @@ jobs:
         with:
           name: ClipKey-ipa
           path: ClipKey.ipa
+
+      - name: Publish release and SideStore source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION' project.yml | sed 's/.*"\(.*\)".*/\1/')
+          TAG="v${VERSION}-${BUILD_NUMBER}"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases"
+          SIZE=$(stat -f%z ClipKey.ipa)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          NOTES=$(git log -1 --pretty=%s)
+          cp docs/icon.png icon.png
+          python3 tools/make_source.py "$VERSION" "$BUILD_NUMBER" "$DATE" \
+            "$BASE/download/$TAG/ClipKey.ipa" "$SIZE" "$BASE/latest/download/icon.png" "$NOTES" > source.json
+          gh release create "$TAG" ClipKey.ipa source.json icon.png \
+            --title "ClipKey $VERSION ($BUILD_NUMBER)" \
+            --notes "$NOTES" \
+            --target "$GITHUB_SHA" \
+            --latest

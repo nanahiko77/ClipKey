@@ -29,10 +29,15 @@
 `tools/ko_vocab.tsv`나 `make_ko_dict.py`를 고친 뒤 `python3 tools/make_ko_dict.py`를 돌리고 `Keyboard/ko_dict.txt`를 같이 올린다.
 
 ## 빌드
-`main` 브랜치에 올리면 Actions의 "Build IPA"가 돌고, 끝나면 Artifacts에서 `ClipKey-ipa`를 받는다.
+Actions의 "Build IPA"를 직접 실행한다 (Run workflow). 끝나면 GitHub 릴리스에 `ClipKey.ipa`와
+SideStore 소스(`source.json`)가 올라간다. 빌드 번호는 Actions 실행 번호를 쓴다.
 
-## 설치
-SideStore의 My Apps에서 `+`로 `ClipKey.ipa`를 고르고, 확장을 묻는 창에서 Keep App Extensions를 고른다.
+## 설치와 업데이트
+SideStore > Sources > `+` 에 아래 주소를 한 번 등록하면, 새 빌드가 SideStore의 업데이트로 뜬다.
+
+    https://github.com/nanahiko77/ClipKey/releases/latest/download/source.json
+
+처음 설치할 때 확장을 묻는 창이 뜨면 Keep App Extensions를 고른다.
 
 ## 키보드 켜기
 설정 > 일반 > 키보드 > 키보드 > 새로운 키보드 추가 > ClipKey,
