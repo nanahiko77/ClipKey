@@ -25,7 +25,9 @@ jobs:
           xcodegen generate
 
       - name: Build (unsigned)
+        # 실패하면 컴파일 오류를 주석(annotation)으로 남긴다 (로그를 못 받는 곳에서도 볼 수 있게)
         run: |
+          set -o pipefail
           xcodebuild \
             -project ClipKey.xcodeproj \
             -scheme ClipKey \
@@ -36,7 +38,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee xcodebuild.log || {
+              grep -E "error:" xcodebuild.log | sort -u | head -30 | while IFS= read -r line; do echo "::error::$line"; done
+              exit 65
+            }
 
       - name: Check keyboard dictionary
         run: test -s build/Build/Products/Release-iphoneos/ClipKey.app/PlugIns/ClipKeyboard.appex/ko_dict.txt
