@@ -173,11 +173,11 @@ extension KeyboardViewController {
 
     /// 도구 줄 자리: 이모지 분류, 또는 스티커 팩
     func buildEmojiToolbar() {
-        func pill(_ b: UIButton, on: Bool) -> UIButton {
+        func pill(_ b: UIButton, on: Bool, width: CGFloat = 36) -> UIButton {
             b.backgroundColor = on ? theme.funcKey : .clear
             b.alpha = on ? 1 : 0.55
             b.layer.cornerRadius = 8
-            b.widthAnchor.constraint(equalToConstant: 36).isActive = true
+            b.widthAnchor.constraint(equalToConstant: width).isActive = true
             b.heightAnchor.constraint(equalToConstant: 34).isActive = true
             return b
         }
@@ -185,6 +185,11 @@ extension KeyboardViewController {
             let icons = ["🕘"] + EmojiData.categories.map { $0.icon }
             let names = ["자주 쓰는 이모지"] + EmojiData.categories.map { $0.name }
             toolbar.distribution = .equalSpacing
+            // 맨 앞: 이모지 검색
+            let search = toolButton(symbol: "search", width: 33, label: "이모지 검색", action: #selector(startEmojiSearch))
+            search.backgroundColor = theme.key
+            search.heightAnchor.constraint(equalToConstant: 34).isActive = true
+            toolbar.addArrangedSubview(search)
             for (i, icon) in icons.enumerated() {
                 let b = UIButton(type: .system)
                 b.setTitle(icon, for: .normal)
@@ -192,7 +197,7 @@ extension KeyboardViewController {
                 b.tag = i
                 b.accessibilityLabel = names[i]
                 b.addTarget(self, action: #selector(emojiCategoryTapped(_:)), for: .touchUpInside)
-                toolbar.addArrangedSubview(pill(b, on: i == emojiCategory))
+                toolbar.addArrangedSubview(pill(b, on: i == emojiCategory, width: 31))
             }
             return
         }
@@ -213,6 +218,7 @@ extension KeyboardViewController {
             b.tag = i
             b.accessibilityLabel = p.name
             b.addTarget(self, action: #selector(stickerPackTapped(_:)), for: .touchUpInside)
+            b.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(stickerPackLongPressed(_:))))
             toolbar.addArrangedSubview(pill(b, on: i == stickerPack))
         }
         let spacer = UIView()
@@ -462,17 +468,172 @@ extension KeyboardViewController {
         pinEdges(field, in: box, insets: UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10))
         addField = field
         updateAddField()
-        let save = UIButton(type: .system)
-        save.setTitle("저장", for: .normal)
-        save.titleLabel?.font = .boldSystemFont(ofSize: 15)
-        save.backgroundColor = theme.accent
-        save.setTitleColor(theme.onAccent, for: .normal)
-        save.layer.cornerRadius = 8
-        save.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        save.addTarget(self, action: #selector(saveAddWord), for: .touchUpInside)
-        let row = UIStackView(arrangedSubviews: [box, save])
+        func rowButton(_ title: String, primary: Bool, action: Selector) -> UIButton {
+            let b = UIButton(type: .system)
+            b.setTitle(title, for: .normal)
+            b.titleLabel?.font = .boldSystemFont(ofSize: 15)
+            b.backgroundColor = primary ? theme.accent : theme.funcKey
+            b.setTitleColor(primary ? theme.onAccent : theme.text, for: .normal)
+            b.layer.cornerRadius = 8
+            b.widthAnchor.constraint(equalToConstant: 58).isActive = true
+            b.addTarget(self, action: action, for: .touchUpInside)
+            return b
+        }
+        var views: [UIView] = [box]
+        switch bufferPurpose {
+        case .addWord:
+            views.append(rowButton("저장", primary: true, action: #selector(saveAddWord)))
+        case .packRename:
+            views.append(rowButton("저장", primary: true, action: #selector(savePackName)))
+        case .clipSearch:
+            views.append(rowButton("목록", primary: false, action: #selector(showClipResults)))
+            views.append(rowButton("닫기", primary: false, action: #selector(cancelAddWord)))
+        case .emojiSearch:
+            views.append(rowButton("닫기", primary: false, action: #selector(cancelAddWord)))
+        }
+        if bufferPurpose == .clipSearch || bufferPurpose == .emojiSearch {
+            // 검색 칸 앞에 돋보기
+            let glass = UIImageView(image: Icon.image("search", size: 16, line: 2))
+            glass.tintColor = theme.muted
+            glass.contentMode = .center
+            glass.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(glass)
+            NSLayoutConstraint.activate([
+                glass.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
+                glass.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+            ])
+            for c in box.constraints where c.firstItem === field && c.firstAttribute == .leading { c.constant = 30 }
+        }
+        let row = UIStackView(arrangedSubviews: views)
         row.axis = .horizontal
         row.spacing = 6
         pinEdges(row, in: barOverlay, insets: UIEdgeInsets(top: 4, left: 8, bottom: 2, right: 8))
+    }
+}
+
+// MARK: - 스티커 팩 관리
+
+extension KeyboardViewController {
+
+    @objc func stickerPackLongPressed(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, let b = g.view, b.tag < stickers.packs.count else { return }
+        haptic()
+        stickerPack = b.tag
+        rebuild()
+        showPackMenu(stickers.packs[b.tag])
+    }
+
+    /// 아래에서 올라오는 팩 메뉴: 이름 바꾸기, 맨 앞으로, 삭제
+    func showPackMenu(_ pack: StickerPack) {
+        packMenu?.removeFromSuperview()
+        let cover = UIView()
+        cover.backgroundColor = UIColor.black.withAlphaComponent(0.25)
+        pinEdges(cover, in: keyArea)
+        cover.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closePackMenu)))
+        packMenu = cover
+
+        let sheet = UIView()
+        sheet.backgroundColor = theme.bg
+        sheet.layer.cornerRadius = 14
+        sheet.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        sheet.translatesAutoresizingMaskIntoConstraints = false
+        cover.addSubview(sheet)
+        NSLayoutConstraint.activate([
+            sheet.leadingAnchor.constraint(equalTo: cover.leadingAnchor),
+            sheet.trailingAnchor.constraint(equalTo: cover.trailingAnchor),
+            sheet.bottomAnchor.constraint(equalTo: cover.bottomAnchor),
+        ])
+
+        let thumb = UIImageView()
+        thumb.backgroundColor = theme.row
+        thumb.layer.cornerRadius = 8
+        thumb.clipsToBounds = true
+        thumb.contentMode = .scaleAspectFill
+        if let first = pack.items.first { thumb.image = UIImage(contentsOfFile: stickers.thumbURL(first).path) }
+        thumb.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        thumb.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        let name = UILabel()
+        name.numberOfLines = 2
+        let t = NSMutableAttributedString(string: pack.name, attributes: [.font: UIFont.boldSystemFont(ofSize: 15), .foregroundColor: theme.text])
+        t.append(NSAttributedString(string: "\n스티커 \(pack.items.count)개", attributes: [.font: UIFont.systemFont(ofSize: 12), .foregroundColor: theme.muted]))
+        name.attributedText = t
+        let close = toolButton(symbol: "xmark", width: 32, label: "닫기", action: #selector(closePackMenu))
+        close.layer.cornerRadius = 16
+        close.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        let head = UIStackView(arrangedSubviews: [thumb, name, close])
+        head.axis = .horizontal
+        head.alignment = .center
+        head.spacing = 10
+
+        func item(_ title: String, danger: Bool = false, action: Selector) -> UIButton {
+            let b = UIButton(type: .system)
+            b.setTitle(title, for: .normal)
+            b.contentHorizontalAlignment = .left
+            b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+            b.titleLabel?.font = danger ? .boldSystemFont(ofSize: 15) : .systemFont(ofSize: 15)
+            b.setTitleColor(danger ? theme.danger : theme.text, for: .normal)
+            b.backgroundColor = theme.row
+            b.layer.cornerRadius = 10
+            b.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            b.addTarget(self, action: action, for: .touchUpInside)
+            return b
+        }
+        let stack = UIStackView(arrangedSubviews: [
+            head,
+            item("이름 바꾸기", action: #selector(renamePackTapped)),
+            item("맨 앞으로 옮기기", action: #selector(movePackToFrontTapped)),
+            item("팩 삭제", danger: true, action: #selector(deletePackTapped)),
+        ])
+        stack.axis = .vertical
+        stack.spacing = 6
+        stack.setCustomSpacing(10, after: head)
+        pinEdges(stack, in: sheet, insets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12))
+    }
+
+    @objc func closePackMenu() {
+        packMenu?.removeFromSuperview()
+    }
+
+    var currentPack: StickerPack? {
+        stickers.packs.indices.contains(stickerPack) ? stickers.packs[stickerPack] : nil
+    }
+
+    @objc func renamePackTapped() {
+        guard let p = currentPack else { return }
+        closePackMenu()
+        renamingPack = p.id
+        openBuffer(.packRename, text: p.name, returnTo: .emoji)
+    }
+
+    @objc func savePackName() {
+        resetComposer()
+        let name = (addBuffer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if let id = renamingPack, !name.isEmpty { stickers.rename(id, to: name) }
+        addBuffer = nil
+        renamingPack = nil
+        addReturnPanel = nil
+        panel = .emoji
+        emojiTab = 1
+        rebuild()
+    }
+
+    @objc func movePackToFrontTapped() {
+        guard let p = currentPack else { return }
+        closePackMenu()
+        stickers.moveToFront(p.id)
+        stickerPack = 0
+        rebuild()
+    }
+
+    @objc func deletePackTapped() {
+        guard let p = currentPack, let index = stickers.deletePack(p.id) else { return }
+        closePackMenu()
+        stickerPack = 0
+        rebuild()
+        showUndoBar("‘\(p.name)’ 팩을 지웠어요") { [weak self] in
+            self?.stickers.restorePack(p, at: index)
+            self?.stickerPack = index
+            self?.rebuild()
+        }
     }
 }

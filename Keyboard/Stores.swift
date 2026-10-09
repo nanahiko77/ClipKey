@@ -731,6 +731,34 @@ final class StickerStore {
            let saved = try? JSONDecoder().decode([StickerPack].self, from: data) {
             packs = saved
         }
+        cleanUp()            // 지난번에 지운 팩·스티커 파일 정리
+    }
+
+    func rename(_ id: UUID, to name: String) {
+        guard let i = packs.firstIndex(where: { $0.id == id }) else { return }
+        packs[i].name = String(name.prefix(20))
+        save()
+    }
+
+    func moveToFront(_ id: UUID) {
+        guard let i = packs.firstIndex(where: { $0.id == id }), i > 0 else { return }
+        let p = packs.remove(at: i)
+        packs.insert(p, at: 0)
+        save()
+    }
+
+    /// 팩을 목록에서 뺀다. 되돌릴 수 있도록 파일은 다음에 키보드를 열 때 정리한다.
+    func deletePack(_ id: UUID) -> Int? {
+        guard let i = packs.firstIndex(where: { $0.id == id }) else { return nil }
+        packs.remove(at: i)
+        save()
+        return i
+    }
+
+    func restorePack(_ pack: StickerPack, at index: Int) {
+        guard !packs.contains(where: { $0.id == pack.id }) else { return }
+        packs.insert(pack, at: min(index, packs.count))
+        save()
     }
 
     func fileURL(_ name: String) -> URL { dir.appendingPathComponent(name) }

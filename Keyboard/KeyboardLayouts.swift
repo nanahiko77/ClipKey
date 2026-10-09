@@ -69,26 +69,7 @@ extension KeyboardViewController {
         switch panel {
         case .keys, .symbols, .numpad:
             if adding {
-                // 단어 추가: 입력 칸과 저장은 추천 줄 자리에 있다. 여기는 한/영, 취소와 안내만.
-                let langKey = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
-                langKey.setAttributedTitle(langTitle(), for: .normal)
-                toolbar.addArrangedSubview(langKey)
-                let cancel = toolButton("취소", symbol: "chevron.left", plain: true, action: #selector(cancelAddWord))
-                cancel.titleLabel?.font = .systemFont(ofSize: 15)
-                toolbar.addArrangedSubview(cancel)
-                let note = UILabel()
-                note.text = "추가한 단어는 추천 줄 맨 앞에"
-                note.font = .systemFont(ofSize: 13)
-                note.textColor = theme.muted
-                note.textAlignment = .center
-                note.adjustsFontSizeToFitWidth = true
-                note.minimumScaleFactor = 0.8
-                note.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                note.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                toolbar.addArrangedSubview(note)
-                let spacer = UIView()
-                spacer.widthAnchor.constraint(equalToConstant: 44).isActive = true
-                toolbar.addArrangedSubview(spacer)
+                buildBufferToolbar()
                 break
             }
             let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
@@ -141,12 +122,27 @@ extension KeyboardViewController {
             }
         case .emoji:
             buildEmojiToolbar()
+        case .clipboard where clipFilter != nil:
+            // 검색 결과 목록
+            let back = toolButton("클립보드", symbol: "chevron.left", plain: true, label: "클립보드 전체로", action: #selector(clearClipFilter))
+            back.titleLabel?.font = .systemFont(ofSize: 15)
+            toolbar.addArrangedSubview(back)
+            let title = toolbarTitle("‘\(clipFilter ?? "")’ \(clipMatches(clipFilter ?? "").count)개")
+            title.textAlignment = .center
+            title.lineBreakMode = .byTruncatingMiddle
+            toolbar.addArrangedSubview(title)
+            let again = toolButton("다시 검색", symbol: "search", action: #selector(startClipSearch))
+            again.titleLabel?.font = .systemFont(ofSize: 13)
+            again.backgroundColor = theme.key
+            toolbar.addArrangedSubview(again)
         case .clipboard:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
             toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, active: true,
                                                   label: "클립보드 닫기", action: #selector(backToKeys)))
             toolbar.addArrangedSubview(toolbarTitle("클립보드"))
+            toolbar.addArrangedSubview(toolButton(symbol: "search", width: 40, plain: true,
+                                                  label: "클립보드 검색", action: #selector(startClipSearch)))
             let clear = toolButton("전체 삭제", plain: true, color: theme.danger, action: #selector(clearClipsTapped(_:)))
             clear.titleLabel?.font = .boldSystemFont(ofSize: 14)
             toolbar.addArrangedSubview(clear)
@@ -178,6 +174,121 @@ extension KeyboardViewController {
             add.titleLabel?.font = .boldSystemFont(ofSize: 14)
             toolbar.addArrangedSubview(add)
         }
+    }
+
+    /// 입력 칸을 쓰는 동안의 도구 줄: 단어 추가·팩 이름은 [한/영][취소] 안내, 검색은 결과
+    func buildBufferToolbar() {
+        switch bufferPurpose {
+        case .clipSearch:
+            let found = clipMatches(addBuffer ?? "")
+            searchResultsRow(count: found.count, empty: (addBuffer ?? "").isEmpty ? "찾을 글자를 치세요" : "맞는 항목이 없어요") { stack in
+                for (i, c) in found.prefix(20).enumerated() {
+                    var t = c.text.replacingOccurrences(of: "\n", with: " ")
+                    if t.count > 18 { t = String(t.prefix(18)) + "…" }
+                    let b = UIButton(type: .system)
+                    b.setTitle(t, for: .normal)
+                    b.titleLabel?.font = .systemFont(ofSize: 13)
+                    b.setTitleColor(theme.text, for: .normal)
+                    b.backgroundColor = theme.key
+                    b.layer.cornerRadius = 15
+                    b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+                    b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+                    b.tag = i
+                    b.accessibilityLabel = c.text + " 붙여넣기"
+                    b.addTarget(self, action: #selector(clipSearchResultTapped(_:)), for: .touchUpInside)
+                    stack.addArrangedSubview(b)
+                }
+            }
+        case .emojiSearch:
+            let found = EmojiData.search(addBuffer ?? "")
+            searchResultsRow(count: found.count, empty: (addBuffer ?? "").isEmpty ? "예: 하트, 웃음, 고양이" : "맞는 이모지가 없어요") { stack in
+                for e in found.prefix(40) {
+                    let b = UIButton(type: .system)
+                    b.setTitle(e, for: .normal)
+                    b.titleLabel?.font = .systemFont(ofSize: 22)
+                    b.widthAnchor.constraint(equalToConstant: 36).isActive = true
+                    b.heightAnchor.constraint(equalToConstant: 34).isActive = true
+                    b.addTarget(self, action: #selector(emojiSearchResultTapped(_:)), for: .touchUpInside)
+                    stack.addArrangedSubview(b)
+                }
+            }
+        case .addWord, .packRename:
+            let langKey = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
+            langKey.setAttributedTitle(langTitle(), for: .normal)
+            toolbar.addArrangedSubview(langKey)
+            let cancel = toolButton("취소", symbol: "chevron.left", plain: true, action: #selector(cancelAddWord))
+            cancel.titleLabel?.font = .systemFont(ofSize: 15)
+            toolbar.addArrangedSubview(cancel)
+            let note = UILabel()
+            note.text = bufferPurpose == .addWord ? "추가한 단어는 추천 줄 맨 앞에" : "스티커 팩 이름"
+            note.font = .systemFont(ofSize: 13)
+            note.textColor = theme.muted
+            note.textAlignment = .center
+            note.adjustsFontSizeToFitWidth = true
+            note.minimumScaleFactor = 0.8
+            note.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            note.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            toolbar.addArrangedSubview(note)
+            let spacer = UIView()
+            spacer.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            toolbar.addArrangedSubview(spacer)
+        }
+    }
+
+    /// 검색 결과 한 줄: [n개] [결과…] (옆으로 밀어서 더 봄)
+    func searchResultsRow(count: Int, empty: String, fill: (UIStackView) -> Void) {
+        let label = UILabel()
+        label.text = count > 0 ? "\(count)개" : empty
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = theme.muted
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        toolbar.addArrangedSubview(label)
+        guard count > 0 else {
+            let spacer = UIView()
+            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            toolbar.addArrangedSubview(spacer)
+            return
+        }
+        let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        scroll.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+        ])
+        fill(stack)
+        toolbar.addArrangedSubview(scroll)
+    }
+
+    @objc func clipSearchResultTapped(_ b: UIButton) {
+        let found = clipMatches(addBuffer ?? "")
+        guard b.tag < found.count else { return }
+        let clip = found[b.tag]
+        resetComposer()
+        addBuffer = nil
+        addReturnPanel = nil
+        clipFilter = nil
+        haptic()
+        pasteClip(clip)            // 붙여넣고 글자 자판으로 돌아간다
+    }
+
+    @objc func emojiSearchResultTapped(_ b: UIButton) {
+        guard let e = b.title(for: .normal) else { return }
+        haptic()
+        textDocumentProxy.insertText(e)     // 검색 칸이 아니라 입력창에 넣는다
+        settings.useEmoji(e)
     }
 
     // MARK: - 본문

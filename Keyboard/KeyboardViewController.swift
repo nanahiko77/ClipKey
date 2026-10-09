@@ -453,6 +453,14 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 단어 추가 화면에서는 글자를 앱 입력창이 아니라 이 칸에 넣는다. nil 이면 평소 입력.
     var addBuffer: String?
+    enum BufferPurpose { case addWord, clipSearch, emojiSearch, packRename }
+    var bufferPurpose: BufferPurpose = .addWord
+    var searchRefreshPending = false
+    /// 클립보드 검색 결과만 보여 줄 때의 검색어
+    var clipFilter: String?
+    /// 이름을 바꾸는 중인 스티커 팩
+    var renamingPack: UUID?
+    weak var packMenu: UIView?
     weak var addField: UILabel?
     var adding: Bool { addBuffer != nil }
 
@@ -502,14 +510,67 @@ final class KeyboardViewController: UIInputViewController {
 
     func updateAddField() {
         addField?.text = (addBuffer ?? "") + "|"
+        // 검색 중이면 결과 줄을 다시 그린다 (한 번의 키 입력에 여러 번 불려도 한 번만)
+        if bufferPurpose == .clipSearch || bufferPurpose == .emojiSearch, !searchRefreshPending {
+            searchRefreshPending = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.searchRefreshPending = false
+                if self.adding { self.buildToolbar() }
+            }
+        }
     }
 
-    @objc func startAddWord() {
+    /// 키보드 안의 입력 칸을 연다 (단어 추가, 클립보드·이모지 검색, 스티커 팩 이름)
+    func openBuffer(_ purpose: BufferPurpose, text: String = "", returnTo: Panel?) {
         resetComposer()
-        addBuffer = ""
+        bufferPurpose = purpose
+        addBuffer = text
+        addReturnPanel = returnTo
         shift = .off
         panel = .keys
         rebuild()
+    }
+
+    @objc func startAddWord() {
+        openBuffer(.addWord, returnTo: addReturnPanel)
+    }
+
+    @objc func startClipSearch() {
+        clipFilter = nil
+        openBuffer(.clipSearch, returnTo: .clipboard)
+    }
+
+    @objc func startEmojiSearch() {
+        openBuffer(.emojiSearch, returnTo: .emoji)
+    }
+
+    /// 입력 칸에서 줄바꿈 키를 눌렀을 때
+    func bufferReturn() {
+        switch bufferPurpose {
+        case .addWord: saveAddWord()
+        case .clipSearch: showClipResults()
+        case .emojiSearch: cancelAddWord()
+        case .packRename: savePackName()
+        }
+    }
+
+    /// 클립보드 검색: 결과만 목록으로 본다
+    @objc func showClipResults() {
+        resetComposer()
+        let q = (addBuffer ?? "").trimmingCharacters(in: .whitespaces)
+        addBuffer = nil
+        clipFilter = q.isEmpty ? nil : q
+        panel = .clipboard
+        addReturnPanel = nil
+        rebuild()
+    }
+
+    /// 검색어에 맞는 클립 (글자만, 대소문자 구분 없이)
+    func clipMatches(_ q: String) -> [Clip] {
+        let query = q.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return [] }
+        return store.sorted.filter { $0.image == nil && $0.text.lowercased().contains(query) }
     }
 
     /// 상단바의 + 버튼: 치던 화면에서 바로 단어를 넣고 돌아온다
@@ -521,6 +582,7 @@ final class KeyboardViewController: UIInputViewController {
     @objc func cancelAddWord() {
         resetComposer()
         addBuffer = nil
+        renamingPack = nil
         panel = addReturnPanel ?? .words
         addReturnPanel = nil
         rebuild()
@@ -759,7 +821,7 @@ final class KeyboardViewController: UIInputViewController {
         if adding {
             // 단어 추가 화면: 줄바꿈은 저장, 간격은 그대로 넣는다
             resetComposer()
-            if separator == "\n" { saveAddWord() } else { docInsert(separator) }
+            if separator == "\n" { bufferReturn() } else { docInsert(separator) }
             return
         }
         resetComposer()
@@ -1078,6 +1140,7 @@ final class KeyboardViewController: UIInputViewController {
 
     @objc func clipTapped() {
         resetComposer()
+        clipFilter = nil
         confirmingID = nil
         panel = .clipboard
         rebuild()

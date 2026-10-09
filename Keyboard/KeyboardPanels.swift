@@ -51,8 +51,13 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
     // MARK: - 클립보드 패널
 
+    @objc func clearClipFilter() {
+        clipFilter = nil
+        rebuild()
+    }
+
     func buildClipboard() {
-        clipItems = store.sorted
+        clipItems = clipFilter.map { clipMatches($0) } ?? store.sorted
         let table = UITableView(frame: .zero, style: .plain)
         table.backgroundColor = .clear
         table.separatorStyle = .none
@@ -65,7 +70,9 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         pinEdges(table, in: keyArea)
         clipTable = table
 
-        if clipItems.isEmpty {
+        if clipItems.isEmpty, clipFilter != nil {
+            pinEdges(emptyLabel("맞는 항목이 없어요."), in: keyArea, insets: UIEdgeInsets(top: 0, left: 24, bottom: 0, right: 24))
+        } else if clipItems.isEmpty {
             let text = hasFullAccess
                 ? "아직 기록이 없습니다.\n텍스트를 복사한 뒤 이 키보드를 열면 저장됩니다."
                 : "설정 > 일반 > 키보드 > 키보드 > 클립보드에서\n'전체 접근 허용'을 켜야 복사한 내용을 읽을 수 있습니다."
@@ -127,6 +134,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         }
         resetComposer()
         docInsert(clip.text)
+        clipFilter = nil
         if freshClip?.id == clip.id { freshClip = nil }
         panel = .keys
         rebuild()

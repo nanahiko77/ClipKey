@@ -162,6 +162,10 @@ enum Icon {
             poly([(12, 3), (14.7, 8.6), (20.8, 9.4), (16.3, 13.7), (17.4, 19.8), (12, 17),
                   (6.6, 19.8), (7.7, 13.7), (3.2, 9.4), (9.3, 8.6)], close: true).fill()
 
+        case "search":
+            stroke(UIBezierPath(ovalIn: CGRect(x: 4.5, y: 4.5, width: 13, height: 13)), line)
+            stroke(poly([(15.5, 15.5), (20, 20)]), line)
+
         case "check":
             stroke(poly([(5, 12.5), (10, 17.5), (19, 7)]), line)
 
