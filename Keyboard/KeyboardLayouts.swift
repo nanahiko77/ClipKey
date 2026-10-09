@@ -251,8 +251,9 @@ extension KeyboardViewController {
         k.altTitle = "전체 삭제"
         k.altBackground = theme.text
         k.altText = theme.bg
-        k.altHoverBackground = theme.danger
-        k.altHoverText = theme.onDanger
+        // 걸린 상태는 화면 모드와 상관없이 디자인의 진한 빨강 + 흰 글씨 (다크 모드의 연분홍을 쓰지 않는다)
+        k.altHoverBackground = Theme.hex(0xB3261E)
+        k.altHoverText = .white
         k.onAlt = { [weak self] in self?.deleteAll() }
         k.onAltHover = {
             // 설정과 상관없이, 전체 삭제가 걸렸다는 것은 진동으로 알린다
