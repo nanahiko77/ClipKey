@@ -676,20 +676,23 @@ final class KeyboardViewController: UIInputViewController {
             items.append((t, k))
         }
 
+        // 순서: 직접 넣은 단어 → 맞춤법(교정, 사전) → 자주 친 단어 → 고정한 클립
+        let matched = words.matches(word)
+        for w in matched where words.isManual(w) { add(w, .learned) }
         if lang == .english, settings.autoCorrect, let fix = correction(for: word) {
             add(fix, .correction)
             add("\u{201C}\(word)\u{201D}", .original)
-        }
-        for w in words.matches(word) { add(w, .learned) }
-        let lower = word.lowercased()
-        for c in store.clips where c.pinned && c.text.count > word.count && c.text.lowercased().hasPrefix(lower) {
-            add(c.text, .pinned)
         }
         let language: String? = lang == .english ? "en_US" : koLanguage
         if let language = language, word.allSatisfy({ $0.isLetter }) {
             let range = NSRange(location: 0, length: (word as NSString).length)
             let found = checker.completions(forPartialWordRange: range, in: word, language: language) ?? []
-            for c in found.prefix(4) { add(c, .dict) }
+            for c in found.prefix(3) { add(c, .dict) }
+        }
+        for w in matched where !words.isManual(w) { add(w, .learned) }
+        let lower = word.lowercased()
+        for c in store.clips where c.pinned && c.text.count > word.count && c.text.lowercased().hasPrefix(lower) {
+            add(c.text, .pinned)
         }
 
         var previousPlain = false

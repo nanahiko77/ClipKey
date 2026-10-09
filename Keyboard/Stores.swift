@@ -331,7 +331,8 @@ final class ClipStore {
 
 // MARK: - 학습한 단어
 
-/// 자주 친 단어를 횟수와 함께 기기 안에 저장한다. 두 번 이상 친 단어만 추천에 쓴다.
+/// 자주 친 단어를 횟수와 함께 기기 안에 저장한다.
+/// 직접 넣은 단어는 바로, 자동으로 배운 단어는 threshold 번 이상 쳤을 때부터 추천에 쓴다.
 final class WordStore {
     private var counts: [String: Int] = [:]
     private let url: URL
@@ -353,12 +354,16 @@ final class WordStore {
         guard w.allSatisfy({ $0.isLetter }) else { return }
         guard !w.contains(where: { HangulComposer.isJamo($0) }) else { return }
         let next = (counts[w] ?? 0) + 1
-        counts[w] = force ? max(next, 2) : next
+        counts[w] = force ? max(next, WordStore.threshold) : next
         if counts.count > 2000 { prune() }
         save()
     }
 
     static let manualCount = 1_000_000
+    /// 자동으로 배운 단어가 추천에 나오기 시작하는 횟수
+    static let threshold = 5
+
+    func isManual(_ w: String) -> Bool { (counts[w] ?? 0) >= WordStore.manualCount }
 
     /// 단어 관리에서 직접 넣은 단어. 숫자나 하이픈, 띄어쓰기가 있어도 되고 바로 추천에 나온다.
     func addManual(_ raw: String) {
@@ -368,11 +373,11 @@ final class WordStore {
         save()
     }
 
-    func knows(_ w: String) -> Bool { (counts[w] ?? 0) >= 2 }
+    func knows(_ w: String) -> Bool { (counts[w] ?? 0) >= WordStore.threshold }
 
     /// 자주 친 순서
     var list: [String] {
-        counts.filter { $0.value >= 2 }
+        counts.filter { $0.value >= WordStore.threshold }
             .sorted { a, b in a.value != b.value ? a.value > b.value : a.key < b.key }
             .map { $0.key }
     }
