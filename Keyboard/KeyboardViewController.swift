@@ -878,7 +878,7 @@ final class KeyboardViewController: UIInputViewController {
         // 내가 되돌린 단어는 기억해서 다음부터 고치지 않는다
         skipCorrection = c.original
         settings.rememberChoice(typed: c.original, chosen: c.original)
-        words.learn(c.original, force: true)
+        words.markChosen(c.original)
         lastKeyID = "undo"
         lastSuggestSignature = nil
         refreshSuggestions()
@@ -1570,7 +1570,7 @@ final class KeyboardViewController: UIInputViewController {
         case .original:
             // 고치지 않고 친 그대로 쓴다. 다음부터는 오타로 보지 않는다.
             skipCorrection = word
-            words.learn(word, force: true)
+            words.markChosen(word)
             settings.rememberChoice(typed: word, chosen: word)
             docInsert(" ")
         case .pinned, .replacement:
@@ -1588,7 +1588,7 @@ final class KeyboardViewController: UIInputViewController {
             // 같은 글자를 다시 치면 이 단어를 먼저 추천한다
             skipCorrection = item.text
             if fieldKind == .normal {
-                words.learn(item.text, force: true)
+                words.markChosen(item.text)
                 if wasFix { settings.rememberChoice(typed: word, chosen: item.text) }
             }
             if lang == .english { docInsert(" ") }

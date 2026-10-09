@@ -480,15 +480,40 @@ final class WordStore {
     /// 정렬한 목록. 키를 누를 때마다 다시 정렬하지 않도록 기억해 두고, 단어가 바뀌면 지운다.
     private var cachedList: [String]?
 
+    /// 추천에서 고르거나 교정을 되돌려서 "이건 맞는 말"이라고 알려 준 단어.
+    /// 교정만 하지 않을 뿐, 추천 칩이나 단어 관리에는 나오지 않는다 (목록이 쓸데없이 길어지지 않게).
+    private var chosen: Set<String> = []
+    private let chosenURL: URL
+
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         url = dir.appendingPathComponent("words.json")
+        chosenURL = dir.appendingPathComponent("chosen.json")
         if let data = try? Data(contentsOf: url),
            let saved = try? JSONDecoder().decode([String: Int].self, from: data) {
             counts = saved
         }
+        if let data = try? Data(contentsOf: chosenURL),
+           let saved = try? JSONDecoder().decode([String].self, from: data) {
+            chosen = Set(saved)
+        }
     }
+
+    /// 내가 고른 단어로 기억한다 (교정하지 않음). 친 횟수도 하나 올린다.
+    func markChosen(_ raw: String) {
+        let w = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !w.isEmpty, w.count <= 30 else { return }
+        learn(w)
+        guard !chosen.contains(w) else { return }
+        chosen.insert(w)
+        if chosen.count > 1500 { chosen = Set(chosen.shuffled().prefix(1200)) }
+        if let data = try? JSONEncoder().encode(Array(chosen)) {
+            try? data.write(to: chosenURL, options: .atomic)
+        }
+    }
+
+    func isChosen(_ w: String) -> Bool { chosen.contains(w) }
 
     /// 배울 만한 단어인지: 숫자가 섞인 글자, 미완성 낱자, 한 글자짜리는 배우지 않는다.
     static func learnable(_ w: String) -> Bool {
@@ -524,7 +549,7 @@ final class WordStore {
         save()
     }
 
-    func knows(_ w: String) -> Bool { (counts[w] ?? 0) >= WordStore.threshold }
+    func knows(_ w: String) -> Bool { (counts[w] ?? 0) >= WordStore.threshold || chosen.contains(w) }
 
     /// 자주 친 순서
     var list: [String] {
@@ -557,6 +582,9 @@ final class WordStore {
     func remove(_ w: String) -> Int? {
         let old = counts[w]
         counts[w] = nil
+        if chosen.remove(w) != nil, let data = try? JSONEncoder().encode(Array(chosen)) {
+            try? data.write(to: chosenURL, options: .atomic)
+        }
         cachedList = nil
         save()
         return old
@@ -571,6 +599,8 @@ final class WordStore {
 
     func clear() {
         counts = [:]
+        chosen = []
+        try? FileManager.default.removeItem(at: chosenURL)
         cachedList = nil
         save()
     }
