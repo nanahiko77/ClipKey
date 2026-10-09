@@ -68,7 +68,8 @@ final class Settings {
         get { min(max(d.integer(forKey: "keyFontSize"), 0), 2) }
         set { d.set(min(max(newValue, 0), 2), forKey: "keyFontSize") }
     }
-    var keyFontScale: CGFloat { [0.9, 1.0, 1.15][keyFontSize] }
+    /// 작게 = 예전 보통, 보통 = 예전 크게, 크게 = 그보다 더 크게
+    var keyFontScale: CGFloat { [1.0, 1.15, 1.3][keyFontSize] }
 
     // MARK: 이모지
 
