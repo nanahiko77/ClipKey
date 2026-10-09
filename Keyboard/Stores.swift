@@ -10,7 +10,7 @@ final class Settings {
     private let d = UserDefaults.standard
 
     private init() {
-        d.register(defaults: ["naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
+        d.register(defaults: ["markedComposing": true, "naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
                               "showHide": true, "repeatOnHold": true, "repeatSpeed": 5, "longPressTime": 0.35])
         // 이모지 패널이 생겼다: 예전에 "준비 중"이라 꺼져 있던 이모지를 한 번만 켠다
         if !d.bool(forKey: "emojiReady") {
@@ -20,6 +20,31 @@ final class Settings {
                 d.set(off, forKey: "toolbarOff")
             }
         }
+    }
+
+    // MARK: 한글 조합
+
+    /// 조합 중인 글자를 "조합 중 글자"(marked text)로 넣는다.
+    /// 지우고 다시 넣지 않아서 사파리 웹페이지 입력창에서 커서가 깜빡이지 않는다.
+    var markedComposing: Bool {
+        get { d.bool(forKey: "markedComposing") }
+        set { d.set(newValue, forKey: "markedComposing") }
+    }
+
+    // MARK: 내가 고른 교정
+
+    /// 친 글자 → 내가 고른 단어. 같은 글자를 다시 치면 이 단어로 고친다. 같은 글자면 "고치지 마".
+    var correctionChoices: [String: String] {
+        get { (d.dictionary(forKey: "correctionChoices") as? [String: String]) ?? [:] }
+        set { d.set(newValue, forKey: "correctionChoices") }
+    }
+
+    func rememberChoice(typed: String, chosen: String) {
+        guard !typed.isEmpty, !chosen.isEmpty else { return }
+        var m = correctionChoices
+        m[typed] = chosen
+        if m.count > 800 { m = Dictionary(uniqueKeysWithValues: m.suffix(600).map { ($0.key, $0.value) }) }
+        correctionChoices = m
     }
 
     // MARK: 이모지

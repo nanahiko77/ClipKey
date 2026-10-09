@@ -379,6 +379,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
             settingHeader("입력"),
             settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
+            settingRow("한글 조합 중 글자 표시 (웹 깜빡임 방지)", toggle(settings.markedComposing, tag: 18)),
             sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
                       min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1),
             sliderRow("길게 누르기 시간", note: "보조 글자 말풍선과 반복 입력이 시작되는 시간 · 최소 0.3초",
@@ -451,6 +452,9 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 15: settings.keySound = s.isOn
         case 16: settings.savePhotos = s.isOn
         case 17: settings.repeatOnHold = s.isOn
+        case 18:
+            resetComposer()
+            settings.markedComposing = s.isOn
         default: break
         }
     }

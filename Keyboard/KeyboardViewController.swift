@@ -78,6 +78,12 @@ final class KeyboardViewController: UIInputViewController {
     var skipCorrection: String?
     /// 간격을 눌러 자동으로 고친 직후. 지우기를 한 번 누르면 원래 친 글자로 되돌린다.
     var lastCorrection: (original: String, fixed: String, separator: String)?
+    /// 자동 교정 되돌리기 칩을 보여 주는 시간. 다음 단어를 치는 중에도 이 시간 동안은 보인다.
+    var correctionTime = Date.distantPast
+    static let correctionChipTime: TimeInterval = 6
+    var correctionChipTimer: Timer?
+    /// 조합 중 글자(marked text)를 마지막으로 바꾼 때. 그 직후의 커서 변화는 우리가 한 것으로 본다.
+    var markEditTime = Date.distantPast
     var spaceRepeat = false            // 간격을 방금 연달아 눌렀는지
     var armedSuggestion: String?       // 길게 눌러 삭제 대기 중인 추천 단어
     var suggestArmTimer: Timer?
@@ -334,6 +340,14 @@ final class KeyboardViewController: UIInputViewController {
         nextWords.flush()
     }
 
+    /// marked text 를 쓸 때: 우리가 바꾼 직후가 아닌데 커서가 움직였으면 사용자가 다른 곳을 누른 것이다
+    override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
+        if marked, !composing.isEmpty, Date().timeIntervalSince(markEditTime) > 0.3 {
+            resetComposer()
+        }
+    }
+
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
         let was = isDark
@@ -439,7 +453,28 @@ final class KeyboardViewController: UIInputViewController {
 
     var docBefore: String? {
         if let b = addBuffer { return b }
-        return textDocumentProxy.documentContextBeforeInput
+        let ctx = textDocumentProxy.documentContextBeforeInput
+        // 조합 중 글자를 앞 글자에 넣어 주지 않는 앱도 있어서, 빠져 있으면 붙여서 본다
+        if marked, !composing.isEmpty, !(ctx ?? "").hasSuffix(composing) {
+            return (ctx ?? "") + composing
+        }
+        return ctx
+    }
+
+    /// 조합 중 글자를 marked text 로 다룰지 (단어 추가 칸은 키보드 안의 글자라 해당 없음)
+    var marked: Bool { settings.markedComposing && addBuffer == nil }
+
+    /// 조합 중 글자를 문서에서 지운다
+    func clearComposingText() {
+        guard !composing.isEmpty else { return }
+        if marked {
+            textDocumentProxy.setMarkedText("", selectedRange: NSRange(location: 0, length: 0))
+            textDocumentProxy.unmarkText()
+            markEditTime = Date()
+        } else {
+            for _ in 0..<composing.count { docDelete() }
+        }
+        composing = ""
     }
 
     func docInsert(_ s: String) {
@@ -502,6 +537,23 @@ final class KeyboardViewController: UIInputViewController {
     /// 조합기를 바꾼 뒤 호출한다. 문서의 조합 중 글자를 새 글자로 바꿔 넣는다.
     func apply(commit: String) {
         let newText = composer.text
+        if marked {
+            // 지웠다 다시 넣지 않고 조합 중 글자만 바꾼다 (사파리 웹 입력창의 커서 깜빡임을 막는다)
+            let proxy = textDocumentProxy
+            if !commit.isEmpty {
+                proxy.setMarkedText(commit, selectedRange: NSRange(location: (commit as NSString).length, length: 0))
+                proxy.unmarkText()
+            } else if newText.isEmpty, !composing.isEmpty {
+                proxy.setMarkedText("", selectedRange: NSRange(location: 0, length: 0))
+                proxy.unmarkText()
+            }
+            if !newText.isEmpty {
+                proxy.setMarkedText(newText, selectedRange: NSRange(location: (newText as NSString).length, length: 0))
+            }
+            composing = newText
+            markEditTime = Date()
+            return
+        }
         for _ in 0..<composing.count { docDelete() }
         let out = commit + newText
         if !out.isEmpty { docInsert(out) }
@@ -510,6 +562,10 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 조합을 끝낸다. 문서의 글자는 그대로 둔다.
     func resetComposer() {
+        if marked, !composing.isEmpty {
+            textDocumentProxy.unmarkText()      // 조합 중 글자를 그대로 확정
+            markEditTime = Date()
+        }
         lastCorrection = nil
         composer = HangulComposer()
         composing = ""
@@ -518,7 +574,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 커서를 직접 옮겼거나 다른 곳을 눌렀으면 조합을 끊는다
     func syncComposer() {
-        guard !composing.isEmpty else { return }
+        guard !composing.isEmpty, !marked else { return }
         if let ctx = docBefore, !ctx.hasSuffix(composing) {
             resetComposer()
         }
@@ -673,10 +729,18 @@ final class KeyboardViewController: UIInputViewController {
             v = b
         }
         if lastKeyID == id, let snap = snapshot {
-            for _ in 0..<(composing.count + snap.commit.count) { docDelete() }
+            clearComposingText()
+            for _ in 0..<snap.commit.count { docDelete() }
             composer = snap.composer
             let t = composer.text
-            if !t.isEmpty { docInsert(t) }
+            if !t.isEmpty {
+                if marked {
+                    textDocumentProxy.setMarkedText(t, selectedRange: NSRange(location: (t as NSString).length, length: 0))
+                    markEditTime = Date()
+                } else {
+                    docInsert(t)
+                }
+            }
             composing = t
             v = snap.vowel == a ? b : a
         }
@@ -711,10 +775,12 @@ final class KeyboardViewController: UIInputViewController {
             replaceWord(word, with: rep)
             final = rep
             lastCorrection = (word, rep, separator)
+            startCorrectionChip()
         } else if separator == " ", settings.correctMode == 2, let fix = autoCorrection(for: word) {
             replaceWord(word, with: fix)
             final = fix
             lastCorrection = (word, fix, separator)
+            startCorrectionChip()
         }
         learn(final)
         if separator == " ", fieldKind == .normal, let p = previous { nextWords.learn(previous: p, next: final) }
@@ -726,6 +792,10 @@ final class KeyboardViewController: UIInputViewController {
     /// 학습한 단어와 직접 넣은 단어(이름, 회사명 등)는 고치지 않는다.
     func corrections(for word: String) -> [String] {
         guard settings.correctMode > 0, panel == .keys, !adding, fieldKind == .normal, word != skipCorrection else { return [] }
+        // 예전에 내가 고른 단어가 있으면 그것을 맨 앞에 (같은 글자를 골랐으면 고치지 않는다)
+        if let choice = settings.correctionChoices[word] {
+            return choice == word ? [] : [choice]
+        }
         if lang == .english { return correction(for: word).map { [$0] } ?? [] }
         return koCandidates(word).map { $0.text }
     }
@@ -740,6 +810,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 간격을 눌렀을 때 자동으로 바꿀 단어. 한글은 확실한 후보만 바꾸고, 나머지는 추천 칸에만 보여 준다.
     func autoCorrection(for word: String) -> String? {
         guard settings.correctMode == 2, panel == .keys, !adding, fieldKind == .normal, word != skipCorrection else { return nil }
+        if let choice = settings.correctionChoices[word] { return choice == word ? nil : choice }
         // 내가 쓰는 말(직접 넣은 단어, 자주 친 단어)을 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
         if !words.matches(word).isEmpty { return nil }
         if lang == .english { return correction(for: word) }
@@ -747,23 +818,45 @@ final class KeyboardViewController: UIInputViewController {
         return best.text
     }
 
-    /// 자동으로 고친 직후에 지우기를 누르면 원래 친 글자로 되돌린다. 되돌렸으면 true.
+    /// 자동으로 고친 것을 원래 친 글자로 되돌린다. 되돌렸으면 true.
+    /// allowTail: 다음 단어를 치는 중이어도 되돌린다 (칩을 눌렀을 때). 지우기 키는 바로 뒤일 때만.
     @discardableResult
-    func undoCorrection() -> Bool {
+    func undoCorrection(allowTail: Bool = false) -> Bool {
         guard let c = lastCorrection else { return false }
+        let tail = allowTail ? currentWord() : ""
+        guard let ctx = docBefore, ctx.hasSuffix(c.fixed + c.separator + tail) else { return false }
+        resetComposer()
         lastCorrection = nil
-        guard let ctx = docBefore, ctx.hasSuffix(c.fixed + c.separator) else { return false }
-        for _ in 0..<(c.fixed.count + c.separator.count) { docDelete() }
-        docInsert(c.original)
-        skipCorrection = c.original           // 같은 단어를 바로 다시 고치지 않는다
+        for _ in 0..<(c.fixed.count + c.separator.count + tail.count) { docDelete() }
+        docInsert(c.original + (tail.isEmpty ? "" : c.separator + tail))
+        // 내가 되돌린 단어는 기억해서 다음부터 고치지 않는다
+        skipCorrection = c.original
+        settings.rememberChoice(typed: c.original, chosen: c.original)
+        words.learn(c.original, force: true)
         lastKeyID = "undo"
+        lastSuggestSignature = nil
         refreshSuggestions()
         return true
     }
 
     @objc func undoChipTapped() {
         stopDelete()
-        undoCorrection()
+        undoCorrection(allowTail: true)
+    }
+
+    /// 자동 교정 되돌리기 칩이 아직 보일 때인지
+    var correctionChipVisible: Bool {
+        lastCorrection != nil && Date().timeIntervalSince(correctionTime) < KeyboardViewController.correctionChipTime
+    }
+
+    func startCorrectionChip() {
+        correctionTime = Date()
+        correctionChipTimer?.invalidate()
+        correctionChipTimer = Timer.scheduledTimer(withTimeInterval: KeyboardViewController.correctionChipTime + 0.05,
+                                                   repeats: false) { [weak self] _ in
+            self?.lastSuggestSignature = nil
+            self?.refreshSuggestions()
+        }
     }
 
     /// 영문 오타면 고칠 단어를 돌려준다
@@ -814,7 +907,7 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - 지우기 (누르고 있으면 연속)
 
     func backspaceOnce() {
-        if lastCorrection != nil, undoCorrection() {
+        if lastCorrection != nil, currentWord().isEmpty, undoCorrection() {
             stopDelete()
             return
         }
@@ -1159,7 +1252,7 @@ final class KeyboardViewController: UIInputViewController {
         let clip = typing ? nil : freshClip      // 치는 중에는 복사 칩을 잠깐 숨긴다
 
         // 지난번과 같으면 화면을 건드리지 않는다
-        let undo = typing ? nil : lastCorrection?.original
+        let undo = correctionChipVisible ? lastCorrection?.original : nil
         var signature = "\(typing)|\(clip?.id.uuidString ?? "")|\(armedSuggestion ?? "")|\(isDark)|\(undo ?? "")"
         for item in items { signature += "|\(item.kind):\(item.text)" }
         if signature == lastSuggestSignature { return }
@@ -1184,7 +1277,7 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         if typing && !items.isEmpty {
-            buildSlots(items)
+            buildSlots(items, reserved: undo == nil ? 0 : undoChipWidth(undo ?? "") + 6)
         } else {
             var previousPlain = false
             for (i, item) in items.enumerated() {
@@ -1260,7 +1353,11 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 고정 3칸: 가운데에 가장 잘 맞는 단어, 왼쪽에 둘째(영문 교정일 때는 친 그대로), 오른쪽에 셋째.
     /// 4번째부터는 오른쪽으로 밀어서 본다.
-    func buildSlots(_ items: [(text: String, kind: SuggestKind)]) {
+    func undoChipWidth(_ title: String) -> CGFloat {
+        undoChip(title, bold: false).systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
+    }
+
+    func buildSlots(_ items: [(text: String, kind: SuggestKind)], reserved: CGFloat = 0) {
         var rest = Array(items.indices)
         var left: Int?
         if let o = items.firstIndex(where: { $0.kind == .original }) {
@@ -1282,7 +1379,8 @@ final class KeyboardViewController: UIInputViewController {
             slot.heightAnchor.constraint(equalToConstant: 36).isActive = true
             // 칸 너비는 추천 영역의 1/3. 화면에 붙인 뒤에 걸어야 한다 (먼저 걸면 키보드가 종료된다)
             suggestStack.addArrangedSubview(slot)
-            slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0).isActive = true
+            slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0,
+                                        constant: -reserved / 3).isActive = true
             if let i = index {
                 let b = suggestionButton(items[i], index: i, slot: true, best: pos == 1)
                 pinEdges(b, in: slot, insets: UIEdgeInsets(top: 3, left: 3, bottom: 3, right: 3))
@@ -1419,12 +1517,15 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         let word = currentWord()
+        // 고른 단어가 오타 교정 후보였는지 (앞글자만 친 자동 완성은 기억하지 않는다)
+        let wasFix = (item.kind == .correction || item.kind == .dict) && corrections(for: word).contains(item.text)
         resetComposer()
         switch item.kind {
         case .original:
             // 고치지 않고 친 그대로 쓴다. 다음부터는 오타로 보지 않는다.
             skipCorrection = word
             words.learn(word, force: true)
+            settings.rememberChoice(typed: word, chosen: word)
             docInsert(" ")
         case .pinned, .replacement:
             replaceWord(word, with: item.text)
@@ -1437,7 +1538,13 @@ final class KeyboardViewController: UIInputViewController {
             }
         default:
             replaceWord(word, with: item.text)
-            learn(item.text)
+            // 내가 고른 단어는 바로 기억한다: 다음에 간격을 눌러도 다른 말로 고치지 않고,
+            // 같은 글자를 다시 치면 이 단어를 먼저 추천한다
+            skipCorrection = item.text
+            if fieldKind == .normal {
+                words.learn(item.text, force: true)
+                if wasFix { settings.rememberChoice(typed: word, chosen: item.text) }
+            }
             if lang == .english { docInsert(" ") }
         }
         lastKeyID = "suggest"
