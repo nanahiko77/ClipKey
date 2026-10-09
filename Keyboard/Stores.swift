@@ -10,7 +10,7 @@ final class Settings {
     private let d = UserDefaults.standard
 
     private init() {
-        d.register(defaults: ["markedComposing": true, "naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
+        d.register(defaults: ["markedComposing2": false, "naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
                               "showHide": true, "repeatOnHold": true, "repeatSpeed": 5, "longPressTime": 0.35])
         // 이모지 패널이 생겼다: 예전에 "준비 중"이라 꺼져 있던 이모지를 한 번만 켠다
         if !d.bool(forKey: "emojiReady") {
@@ -26,9 +26,11 @@ final class Settings {
 
     /// 조합 중인 글자를 "조합 중 글자"(marked text)로 넣는다.
     /// 지우고 다시 넣지 않아서 사파리 웹페이지 입력창에서 커서가 깜빡이지 않는다.
+    /// 앱마다 처리가 달라 글자가 겹치거나 사라지는 경우가 있어 기본은 끈다 (실험 기능).
+    /// 예전 설정 이름(markedComposing)은 기본으로 켜져 있었으므로 새 이름으로 바꿔 모두 꺼진 상태에서 시작한다.
     var markedComposing: Bool {
-        get { d.bool(forKey: "markedComposing") }
-        set { d.set(newValue, forKey: "markedComposing") }
+        get { d.bool(forKey: "markedComposing2") }
+        set { d.set(newValue, forKey: "markedComposing2") }
     }
 
     // MARK: 내가 고른 교정
