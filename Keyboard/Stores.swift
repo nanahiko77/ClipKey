@@ -234,8 +234,8 @@ struct Theme {
         muted: hex(0x4A5058), divider: hex(0xC3C8D0), accent: hex(0x3D3D3D), onAccent: hex(0xFFFFFF),
         pinBg: hex(0xDCE2F1), danger: hex(0xB3261E), onDanger: hex(0xFFFFFF), row: hex(0xFFFFFF),
         hint: hex(0x6B7280),
-        // 라이트: 기본 키보드(iOS 26)처럼 모든 키가 흰색
-        letterKey: hex(0xFFFFFF), fnKey: hex(0xFFFFFF))
+        // 라이트: 글자 키는 흰색, 기능 키와 줄바꿈은 조금 어두운 회색으로 구분
+        letterKey: hex(0xFFFFFF), fnKey: hex(0xCDD1D8))
 
     static let dark = Theme(
         bg: hex(0x1B1C1F), key: hex(0x4A4D54), funcKey: hex(0x2E3035), text: hex(0xF2F3F5),
