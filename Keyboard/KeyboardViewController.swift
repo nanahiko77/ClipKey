@@ -58,6 +58,8 @@ final class KeyboardViewController: UIInputViewController {
     weak var pickerView: UIView?
     var previewSticker: String?
     var toolbarHeight: NSLayoutConstraint?
+    var viewHeight: NSLayoutConstraint?
+    var isLandscape = false
     /// 추천 줄 자리에 대신 올리는 것 (단어 추가 입력 칸, 이모지 패널 탭)
     let barOverlay = UIView()
     lazy var koLanguage: String? = UITextChecker.availableLanguages.first { $0.hasPrefix("ko") }
@@ -177,6 +179,8 @@ final class KeyboardViewController: UIInputViewController {
         let height = view.heightAnchor.constraint(equalToConstant: 336)
         height.priority = UILayoutPriority(999)
         height.isActive = true
+        viewHeight = height
+        isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
 
         toolbar.axis = .horizontal
         toolbar.spacing = 4
@@ -328,8 +332,22 @@ final class KeyboardViewController: UIInputViewController {
         return true
     }
 
+    /// 화면을 돌리면 높이를 바꿔 다시 그린다
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self = self else { return }
+            let now = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            if now != self.isLandscape {
+                self.isLandscape = now
+                self.rebuild()
+            }
+        }
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         capture()
         ctxCache = nil
         // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
@@ -412,10 +430,13 @@ final class KeyboardViewController: UIInputViewController {
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
         let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
         suggestBar.isHidden = !showBar
-        suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
+        // 가로 화면은 세로 공간이 좁아서 전체를 낮춘다 (세로 336 → 가로 236)
+        viewHeight?.constant = isLandscape ? 236 : 336
+        suggestBarHeight?.constant = showBar ? (isLandscape ? 32 : KeyboardViewController.suggestBarFull) : 0
         // 추천 줄이 없는 화면(클립보드, 설정 …)은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
-        toolbar.layoutMargins.top = showBar ? 2 : 10
-        toolbarHeight?.constant = showBar ? 46 : 54
+        toolbar.layoutMargins.top = showBar ? 2 : (isLandscape ? 6 : 10)
+        toolbar.layoutMargins.bottom = isLandscape ? 2 : 8
+        toolbarHeight?.constant = isLandscape ? (showBar ? 40 : 44) : (showBar ? 46 : 54)
         barOverlay.subviews.forEach { $0.removeFromSuperview() }
         barOverlay.isHidden = true
         suggestScroll.isHidden = false
@@ -432,7 +453,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
