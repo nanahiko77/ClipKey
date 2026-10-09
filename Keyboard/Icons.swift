@@ -60,6 +60,19 @@ enum Icon {
             stroke(poly([(9, 11), (15, 11)]), line)
             stroke(poly([(9, 15), (15, 15)]), line)
 
+        case "plus":
+            stroke(poly([(12, 5), (12, 19)]), line)
+            stroke(poly([(5, 12), (19, 12)]), line)
+
+        case "smile":
+            stroke(UIBezierPath(ovalIn: CGRect(x: 3, y: 3, width: 18, height: 18)), line)
+            let m = UIBezierPath()
+            m.move(to: CGPoint(x: 8.5, y: 14.5))
+            m.addQuadCurve(to: CGPoint(x: 15.5, y: 14.5), controlPoint: CGPoint(x: 12, y: 18))
+            stroke(m, line)
+            UIBezierPath(ovalIn: CGRect(x: 8, y: 8.5, width: 2, height: 2)).fill()
+            UIBezierPath(ovalIn: CGRect(x: 14, y: 8.5, width: 2, height: 2)).fill()
+
         case "undo":
             // 되돌리기: 왼쪽 화살촉과 돌아 나오는 선
             stroke(poly([(9, 14), (4, 9), (9, 4)]), line)

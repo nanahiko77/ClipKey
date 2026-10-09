@@ -6,7 +6,7 @@ enum SuggestKind { case correction, original, learned, pinned, dict, next }
 /// 키보드 본체: 상태, 입력 처리, 추천 단어.
 /// 자판 배치는 KeyboardLayouts.swift, 패널은 KeyboardPanels.swift 에 있다.
 final class KeyboardViewController: UIInputViewController {
-    enum Panel { case keys, symbols, clipboard, settings, words }
+    enum Panel { case keys, symbols, clipboard, settings, words, toolbarEdit }
     enum Lang { case hangul, english }
     enum Shift { case off, once, locked }
 
@@ -53,6 +53,13 @@ final class KeyboardViewController: UIInputViewController {
 
     // 화면
     let toolbar = UIStackView()
+    /// 추천 줄 (B안: 도구 줄 위에 따로 둔다). 글자 자판·숫자 화면에서만 보인다.
+    let suggestBar = UIView()
+    var suggestBarHeight: NSLayoutConstraint?
+    static let suggestBarFull: CGFloat = 38
+    /// 상단바에서 단어 추가를 열었으면 저장·취소 뒤 글자 자판으로 돌아간다
+    var addReturnPanel: Panel?
+    var toolbarEditList: ToolbarEditList?
     let divider = UIView()
     let keyArea = KeyArea()
     let suggestScroll = UIScrollView()
@@ -105,7 +112,8 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let height = view.heightAnchor.constraint(equalToConstant: 300)
+        // 추천 줄(38) + 도구 줄(46) + 자판. 예전보다 36pt 높다.
+        let height = view.heightAnchor.constraint(equalToConstant: 336)
         height.priority = UILayoutPriority(999)
         height.isActive = true
 
@@ -113,8 +121,7 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.spacing = 4
         toolbar.alignment = .center
         toolbar.isLayoutMarginsRelativeArrangement = true
-        // 위쪽 여백은 줄이고, 자판과의 사이를 넓힌다
-        toolbar.layoutMargins = UIEdgeInsets(top: 1, left: 6, bottom: 14, right: 6)
+        toolbar.layoutMargins = UIEdgeInsets(top: 2, left: 6, bottom: 8, right: 6)
 
         suggestStack.axis = .horizontal
         suggestStack.alignment = .center
@@ -133,15 +140,27 @@ final class KeyboardViewController: UIInputViewController {
             suggestStack.heightAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.heightAnchor),
         ])
 
-        for v in [toolbar, divider, keyArea] as [UIView] {
+        for v in [suggestBar, toolbar, divider, keyArea] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(v)
         }
+        suggestBar.clipsToBounds = true
+        suggestScroll.translatesAutoresizingMaskIntoConstraints = false
+        suggestBar.addSubview(suggestScroll)
+        let barHeight = suggestBar.heightAnchor.constraint(equalToConstant: KeyboardViewController.suggestBarFull)
+        suggestBarHeight = barHeight
         NSLayoutConstraint.activate([
-            toolbar.topAnchor.constraint(equalTo: view.topAnchor),
+            suggestBar.topAnchor.constraint(equalTo: view.topAnchor),
+            suggestBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            suggestBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            barHeight,
+            suggestScroll.leadingAnchor.constraint(equalTo: suggestBar.leadingAnchor, constant: 6),
+            suggestScroll.trailingAnchor.constraint(equalTo: suggestBar.trailingAnchor, constant: -6),
+            suggestScroll.bottomAnchor.constraint(equalTo: suggestBar.bottomAnchor),
+            toolbar.topAnchor.constraint(equalTo: suggestBar.bottomAnchor),
             toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 51),
+            toolbar.heightAnchor.constraint(equalToConstant: 46),
             divider.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -216,6 +235,10 @@ final class KeyboardViewController: UIInputViewController {
         disarm()
         view.backgroundColor = theme.bg
         divider.backgroundColor = theme.divider
+        // 추천 줄은 글자 자판과 숫자 화면에서만 (다른 패널은 그만큼 넓게 쓴다)
+        let showBar = (panel == .keys || panel == .symbols) && !adding
+        suggestBar.isHidden = !showBar
+        suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
         buildToolbar()
         buildBody()
         lastSuggestSignature = nil
@@ -310,10 +333,17 @@ final class KeyboardViewController: UIInputViewController {
         rebuild()
     }
 
+    /// 상단바의 + 버튼: 치던 화면에서 바로 단어를 넣고 돌아온다
+    @objc func startAddWordFromToolbar() {
+        addReturnPanel = .keys
+        startAddWord()
+    }
+
     @objc func cancelAddWord() {
         resetComposer()
         addBuffer = nil
-        panel = .words
+        panel = addReturnPanel ?? .words
+        addReturnPanel = nil
         rebuild()
     }
 
@@ -323,7 +353,8 @@ final class KeyboardViewController: UIInputViewController {
         let text = (addBuffer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         addBuffer = nil
         if !text.isEmpty { words.addManual(text) }
-        panel = .words
+        panel = addReturnPanel ?? .words
+        addReturnPanel = nil
         rebuild()
     }
 
@@ -549,6 +580,8 @@ final class KeyboardViewController: UIInputViewController {
     /// 간격을 눌렀을 때 자동으로 바꿀 단어. 한글은 확실한 후보만 바꾸고, 나머지는 추천 칸에만 보여 준다.
     func autoCorrection(for word: String) -> String? {
         guard settings.correctMode == 2, panel == .keys, !adding, word != skipCorrection else { return nil }
+        // 직접 넣은 단어를 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
+        if words.matches(word).contains(where: { words.isManual($0) }) { return nil }
         if lang == .english { return correction(for: word) }
         guard let best = koCandidates(word).first, best.sure else { return nil }
         return best.text
@@ -842,11 +875,9 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// 상단바 C안: 글자를 치는 중에는 한/영, 123 만 남기고 나머지 자리를 추천 단어에 준다
+    /// B안부터는 치는 중에도 도구를 숨기지 않는다 (추천은 따로 한 줄을 쓴다)
     func setToolbarTyping(_ typing: Bool) {
         toolbarTyping = typing
-        for b in [clipToolButton, arrowLeftButton, arrowRightButton, hideToolButton] {
-            b?.isHidden = typing
-        }
     }
 
     func renderSuggestions() {
@@ -912,8 +943,9 @@ final class KeyboardViewController: UIInputViewController {
             left = o
             rest.removeAll { $0 == o }
         }
-        // 가운데: 고친 단어가 있으면 그것, 없으면 첫째
-        let center = rest.first { items[$0].kind == .correction } ?? rest.first
+        // 가운데: 직접 넣은 단어 → 고친 단어 → 첫째 순서
+        let manual = rest.first { items[$0].kind == .learned && words.isManual(items[$0].text) }
+        let center = manual ?? rest.first { items[$0].kind == .correction } ?? rest.first
         if let c = center { rest.removeAll { $0 == c } }
         if left == nil, !rest.isEmpty { left = rest.removeFirst() }
         let right = rest.isEmpty ? nil : rest.removeFirst()

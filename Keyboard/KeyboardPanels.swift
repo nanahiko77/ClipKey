@@ -362,7 +362,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
             settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
             settingHeader("상단바"),
-            settingRow("커서 좌우 화살표", toggle(settings.showArrows, tag: 14)),
+            settingRow("상단바 꾸미기", openToolbarEditButton()),
             settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
             settingRow("학습한 단어", wordButtons),
             settingHeader("클립보드"),
@@ -617,6 +617,30 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         }
     }
 
+    // MARK: 상단바 꾸미기
+
+    func openToolbarEditButton() -> UIButton {
+        let b = toolButton("열기 ›", action: #selector(openToolbarEdit))
+        b.titleLabel?.font = .boldSystemFont(ofSize: 14)
+        return b
+    }
+
+    @objc func openToolbarEdit() {
+        panel = .toolbarEdit
+        rebuild()
+    }
+
+    @objc func resetToolbarTapped() {
+        settings.resetToolbar()
+        buildBody()
+    }
+
+    func buildToolbarEdit() {
+        let list = ToolbarEditList(settings: settings, theme: theme)
+        toolbarEditList = list
+        pinEdges(list.table, in: keyArea)
+    }
+
     @objc func openWords() {
         panel = .words
         rebuild()
@@ -693,5 +717,204 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         guard sender.tag < wordList.count else { return }
         words.remove(wordList[sender.tag])
         buildBody()
+    }
+}
+
+
+// MARK: - 상단바 꾸미기 목록
+
+/// 상단바 도구를 켜고 끄고, ≡ 를 끌어서 순서를 바꾼다.
+/// 위 묶음: 순서를 바꿀 수 있는 도구. 아래 묶음: 오른쪽 끝에 붙는 화살표와 닫기.
+final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegate {
+    let table = UITableView(frame: .zero, style: .plain)
+    private let settings: Settings
+    private let theme: Theme
+    private var order: [String]
+    private let preview = UIStackView()
+
+    static let names: [String: String] = [
+        "clipboard": "클립보드", "settings": "설정", "addword": "단어 추가", "emoji": "이모지",
+        "arrows": "커서 좌우 화살표", "hide": "키보드 닫기",
+    ]
+    static let notes: [String: String] = ["addword": "치던 말을 바로 등록", "emoji": "준비 중 · 다음 단계에서 만듦"]
+    static let icons: [String: String] = [
+        "clipboard": "clipboard", "settings": "slider.horizontal.3", "addword": "plus", "emoji": "smile",
+        "arrows": "chevron.right", "hide": "keyboard.down",
+    ]
+    static let fixed = ["arrows", "hide"]
+
+    init(settings: Settings, theme: Theme) {
+        self.settings = settings
+        self.theme = theme
+        self.order = settings.toolbarOrder
+        super.init()
+        table.dataSource = self
+        table.delegate = self
+        table.isEditing = true
+        table.allowsSelectionDuringEditing = false
+        table.backgroundColor = .clear
+        table.separatorColor = theme.divider
+        table.rowHeight = 48
+        table.tableHeaderView = makeHeader()
+    }
+
+    // 미리 보기와 안내 문구
+    private func makeHeader() -> UIView {
+        let box = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 104))
+        let top = UILabel()
+        top.text = "미리 보기 · 켠 것만 이 순서대로 보입니다"
+        top.font = .systemFont(ofSize: 12)
+        top.textColor = theme.muted
+        let bottom = UILabel()
+        bottom.text = "≡ 를 끌어서 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다."
+        bottom.font = .systemFont(ofSize: 12)
+        bottom.textColor = theme.muted
+        bottom.adjustsFontSizeToFitWidth = true
+        bottom.minimumScaleFactor = 0.8
+        let card = UIView()
+        card.backgroundColor = theme.row
+        card.layer.cornerRadius = 10
+        preview.axis = .horizontal
+        preview.alignment = .center
+        preview.spacing = 2
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(preview)
+        for v in [top, card, bottom] as [UIView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            top.topAnchor.constraint(equalTo: box.topAnchor, constant: 8),
+            top.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
+            card.topAnchor.constraint(equalTo: top.bottomAnchor, constant: 6),
+            card.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10),
+            card.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10),
+            card.heightAnchor.constraint(equalToConstant: 42),
+            preview.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 6),
+            preview.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -6),
+            preview.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            bottom.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 8),
+            bottom.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
+            bottom.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -12),
+        ])
+        updatePreview()
+        return box
+    }
+
+    private func previewIcon(_ name: String) -> UIView {
+        let v = UIImageView(image: Icon.image(name, size: 18, line: 1.75))
+        v.tintColor = theme.text
+        v.contentMode = .center
+        v.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return v
+    }
+
+    private func updatePreview() {
+        preview.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let lang = UILabel()
+        lang.text = "한/영"
+        lang.font = .boldSystemFont(ofSize: 13)
+        lang.textAlignment = .center
+        lang.textColor = theme.text
+        lang.backgroundColor = theme.funcKey
+        lang.layer.cornerRadius = 7
+        lang.layer.masksToBounds = true
+        lang.widthAnchor.constraint(equalToConstant: 42).isActive = true
+        lang.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        preview.addArrangedSubview(lang)
+        let off = settings.toolbarOff
+        for item in order where !off.contains(item) && item != "emoji" {
+            preview.addArrangedSubview(previewIcon(ToolbarEditList.icons[item] ?? "plus"))
+        }
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        preview.addArrangedSubview(spacer)
+        if settings.showArrows {
+            preview.addArrangedSubview(previewIcon("chevron.left"))
+            preview.addArrangedSubview(previewIcon("chevron.right"))
+        }
+        if settings.showHide { preview.addArrangedSubview(previewIcon("keyboard.down")) }
+    }
+
+    private func key(_ indexPath: IndexPath) -> String {
+        indexPath.section == 0 ? order[indexPath.row] : ToolbarEditList.fixed[indexPath.row]
+    }
+
+    private func isOn(_ item: String) -> Bool {
+        switch item {
+        case "arrows": return settings.showArrows
+        case "hide": return settings.showHide
+        default: return !settings.toolbarOff.contains(item)
+        }
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int { 2 }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        section == 0 ? order.count : ToolbarEditList.fixed.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let item = key(indexPath)
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        cell.backgroundColor = .clear
+        cell.selectionStyle = .none
+        cell.textLabel?.text = ToolbarEditList.names[item]
+        cell.textLabel?.font = .systemFont(ofSize: 15)
+        cell.textLabel?.textColor = theme.text
+        cell.detailTextLabel?.text = ToolbarEditList.notes[item]
+        cell.detailTextLabel?.font = .systemFont(ofSize: 12)
+        cell.detailTextLabel?.textColor = theme.muted
+        cell.imageView?.image = Icon.image(ToolbarEditList.icons[item] ?? "plus", size: 18, line: 1.75)
+        cell.imageView?.tintColor = theme.text
+        let sw = UISwitch()
+        sw.isOn = item == "emoji" ? false : isOn(item)
+        sw.isEnabled = item != "emoji"
+        sw.accessibilityLabel = ToolbarEditList.names[item]
+        sw.tag = indexPath.section * 100 + indexPath.row
+        sw.addTarget(self, action: #selector(switchChanged(_:)), for: .valueChanged)
+        cell.accessoryView = sw
+        cell.editingAccessoryView = sw
+        cell.showsReorderControl = indexPath.section == 0
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        section == 0 ? "왼쪽 (한/영 다음)" : "오른쪽 끝"
+    }
+
+    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle { .none }
+
+    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool { false }
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { indexPath.section == 0 }
+
+    /// 위 묶음 안에서만 옮길 수 있다
+    func tableView(_ tableView: UITableView, targetIndexPathForMoveFromRowAt source: IndexPath,
+                   toProposedIndexPath proposed: IndexPath) -> IndexPath {
+        proposed.section == 0 ? proposed : IndexPath(row: order.count - 1, section: 0)
+    }
+
+    func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
+        let item = order.remove(at: source.row)
+        order.insert(item, at: destination.row)
+        settings.toolbarOrder = order
+        updatePreview()
+        // 스위치의 tag 가 줄 번호라서 다시 그린다
+        DispatchQueue.main.async { tableView.reloadData() }
+    }
+
+    @objc private func switchChanged(_ sw: UISwitch) {
+        let item = key(IndexPath(row: sw.tag % 100, section: sw.tag / 100))
+        switch item {
+        case "arrows": settings.showArrows = sw.isOn
+        case "hide": settings.showHide = sw.isOn
+        default:
+            var off = settings.toolbarOff.filter { $0 != item }
+            if !sw.isOn { off.append(item) }
+            settings.toolbarOff = off
+        }
+        updatePreview()
     }
 }

@@ -94,29 +94,48 @@ extension KeyboardViewController {
             let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
             langB.setAttributedTitle(langTitle(), for: .normal)
             toolbar.addArrangedSubview(langB)
-            let clipB = toolButton(symbol: "clipboard", width: 40, plain: true,
-                                   color: theme.accent, label: "클립보드 열기", action: #selector(clipTapped))
-            toolbar.addArrangedSubview(clipB)
-            clipToolButton = clipB
-            toolbar.addArrangedSubview(suggestScroll)
+            // 꾸미기에서 켠 도구를 고른 순서대로 (이모지는 패널을 만들 때까지 넣지 않는다)
+            clipToolButton = nil
+            for item in settings.toolbarOrder where !settings.toolbarOff.contains(item) {
+                switch item {
+                case "clipboard":
+                    let clipB = toolButton(symbol: "clipboard", width: 40, plain: true,
+                                           color: theme.accent, label: "클립보드 열기", action: #selector(clipTapped))
+                    toolbar.addArrangedSubview(clipB)
+                    clipToolButton = clipB
+                case "settings":
+                    toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, plain: true,
+                                                          label: "설정 열기", action: #selector(openSettings)))
+                case "addword":
+                    toolbar.addArrangedSubview(toolButton(symbol: "plus", width: 40, plain: true,
+                                                          label: "단어 추가", action: #selector(startAddWordFromToolbar)))
+                default:
+                    break
+                }
+            }
+            let spacer = UIView()
+            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            toolbar.addArrangedSubview(spacer)
             arrowLeftButton = nil
             arrowRightButton = nil
             if settings.showArrows {
-                let l = toolButton(symbol: "chevron.left", width: 36, plain: true,
+                let l = toolButton(symbol: "chevron.left", width: 40, plain: true,
                                    label: "커서 왼쪽으로", action: #selector(cursorLeft))
-                let r = toolButton(symbol: "chevron.right", width: 36, plain: true,
+                let r = toolButton(symbol: "chevron.right", width: 40, plain: true,
                                    label: "커서 오른쪽으로", action: #selector(cursorRight))
                 toolbar.addArrangedSubview(l)
                 toolbar.addArrangedSubview(r)
                 arrowLeftButton = l
                 arrowRightButton = r
             }
-            let hideB = toolButton(symbol: "keyboard.down", width: 36, plain: true,
-                                   label: "키보드 닫기", action: #selector(hideKeyboard))
-            toolbar.addArrangedSubview(hideB)
-            hideToolButton = hideB
-            // 입력 중이면 C안대로 도구를 숨긴 채로 시작한다
-            setToolbarTyping(panel == .keys && !currentWord().isEmpty)
+            hideToolButton = nil
+            if settings.showHide {
+                let hideB = toolButton(symbol: "keyboard.down", width: 40, plain: true,
+                                       label: "키보드 닫기", action: #selector(hideKeyboard))
+                toolbar.addArrangedSubview(hideB)
+                hideToolButton = hideB
+            }
         case .clipboard:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
@@ -136,6 +155,13 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(toolbarTitle("설정"))
             toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, active: true,
                                                   label: "설정 닫기", action: #selector(clipTapped)))
+        case .toolbarEdit:
+            toolbar.addArrangedSubview(toolButton(symbol: "chevron.left", width: 44,
+                                                  label: "설정으로 돌아가기", action: #selector(openSettings)))
+            toolbar.addArrangedSubview(toolbarTitle("상단바 꾸미기"))
+            let reset = toolButton("기본값으로", plain: true, action: #selector(resetToolbarTapped))
+            reset.titleLabel?.font = .boldSystemFont(ofSize: 14)
+            toolbar.addArrangedSubview(reset)
         case .words:
             toolbar.addArrangedSubview(toolButton(symbol: "chevron.left", width: 44,
                                                   label: "설정으로 돌아가기", action: #selector(openSettings)))
@@ -173,6 +199,8 @@ extension KeyboardViewController {
             buildClipboard()
         case .settings:
             buildSettings()
+        case .toolbarEdit:
+            buildToolbarEdit()
         case .words:
             buildWords()
         }

@@ -10,7 +10,39 @@ final class Settings {
     private let d = UserDefaults.standard
 
     private init() {
-        d.register(defaults: ["naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true])
+        d.register(defaults: ["naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
+                              "showHide": true])
+    }
+
+    // MARK: 상단바 꾸미기
+
+    /// 순서를 바꿀 수 있는 도구. 한/영은 항상 맨 앞, 화살표와 닫기는 항상 맨 뒤.
+    static let toolbarItemsAll = ["clipboard", "settings", "addword", "emoji"]
+    static let toolbarOffDefault = ["emoji"]
+
+    var toolbarOrder: [String] {
+        get {
+            let saved = (d.stringArray(forKey: "toolbarOrder") ?? []).filter { Settings.toolbarItemsAll.contains($0) }
+            return saved + Settings.toolbarItemsAll.filter { !saved.contains($0) }
+        }
+        set { d.set(newValue, forKey: "toolbarOrder") }
+    }
+    /// 꺼 둔 도구
+    var toolbarOff: [String] {
+        get { d.stringArray(forKey: "toolbarOff") ?? Settings.toolbarOffDefault }
+        set { d.set(newValue, forKey: "toolbarOff") }
+    }
+    /// 상단바의 키보드 닫기 버튼
+    var showHide: Bool {
+        get { d.bool(forKey: "showHide") }
+        set { d.set(newValue, forKey: "showHide") }
+    }
+
+    func resetToolbar() {
+        d.removeObject(forKey: "toolbarOrder")
+        d.removeObject(forKey: "toolbarOff")
+        showArrows = true
+        showHide = true
     }
 
     /// 상단바의 커서 좌우 화살표
