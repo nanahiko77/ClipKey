@@ -330,7 +330,7 @@ extension KeyboardViewController {
     // MARK: - 키 만들기
 
     func style(_ k: KeyButton, fn: Bool) {
-        k.backgroundColor = fn ? theme.funcKey : theme.key
+        k.backgroundColor = fn ? theme.fnKey : theme.letterKey
         k.setTitleColor(theme.text, for: .normal)
         k.tintColor = theme.text
         k.hintColor = theme.hint
@@ -405,9 +405,8 @@ extension KeyboardViewController {
         k.setImage(Icon.key(symbol), for: .normal)
         style(k, fn: fn)
         if accent {
-            k.backgroundColor = theme.accent
-            k.tintColor = theme.onAccent
-            k.setTitleColor(theme.onAccent, for: .normal)
+            // 줄바꿈 키는 기능 키와 같은 색 (기본 키보드처럼)
+            k.backgroundColor = theme.fnKey
         }
         k.accessibilityLabel = label
         wire(k)
@@ -432,7 +431,8 @@ extension KeyboardViewController {
             self.cursorDragging = true
             self.selectionFeedback.prepare()
             // 기본 키보드처럼: 톡 하는 진동과 함께 키 글자가 사라져 빈 판(트랙패드)이 된다
-            if self.settings.haptic { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            // 키 진동 설정과 상관없이: 커서 모드로 바뀌었다는 신호라서 늘 준다
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             UIView.animate(withDuration: 0.15) {
                 for key in self.keyArea.allKeys { key.setBlank(true) }
                 k?.setBlank(true)

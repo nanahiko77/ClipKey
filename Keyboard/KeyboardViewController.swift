@@ -409,8 +409,9 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - 화면 다시 그리기
 
     func resolveTheme() {
-        let systemDark = textDocumentProxy.keyboardAppearance == .dark
-            || UIScreen.main.traitCollection.userInterfaceStyle == .dark
+        // 화면 모드만 본다. 앱이 입력 칸에 어두운 키보드를 달라고 해도(keyboardAppearance) iOS 26 기본 키보드는
+        // 화면 모드를 따르므로 같게 한다 (라이트 모드인데 우리 키보드만 어둡게 나오던 것)
+        let systemDark = UIScreen.main.traitCollection.userInterfaceStyle == .dark
         switch settings.themeMode {
         case 1: isDark = false
         case 2: isDark = true
@@ -427,7 +428,7 @@ final class KeyboardViewController: UIInputViewController {
         // 단, 완전히 투명하면 iOS 가 그 자리의 터치를 키보드에 주지 않는다 (설정 여백을 밀어도 스크롤이 안 되고,
         // 키 사이 틈을 눌러도 가까운 키가 안 눌렸다). 눈에 안 보일 만큼만 색을 깔아 터치를 받는다.
         view.backgroundColor = UIColor(white: isDark ? 0 : 1, alpha: 0.015)
-        divider.backgroundColor = theme.divider
+        divider.backgroundColor = theme.divider.withAlphaComponent(isDark ? 0.6 : 0.45)
         // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
         let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji

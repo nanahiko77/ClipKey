@@ -218,6 +218,9 @@ struct Theme {
     let onDanger: UIColor
     let row: UIColor
     let hint: UIColor
+    /// 자판의 글자 키 / 기능 키(지우기·123·줄바꿈 등) 바탕
+    let letterKey: UIColor
+    let fnKey: UIColor
 
     static func hex(_ v: UInt32) -> UIColor {
         UIColor(red: CGFloat((v >> 16) & 0xFF) / 255,
@@ -230,13 +233,17 @@ struct Theme {
         bg: hex(0xE4E6EA), key: hex(0xFFFFFF), funcKey: hex(0xC3C8D0), text: hex(0x16181C),
         muted: hex(0x4A5058), divider: hex(0xC3C8D0), accent: hex(0x3D3D3D), onAccent: hex(0xFFFFFF),
         pinBg: hex(0xDCE2F1), danger: hex(0xB3261E), onDanger: hex(0xFFFFFF), row: hex(0xFFFFFF),
-        hint: hex(0x6B7280))
+        hint: hex(0x6B7280),
+        // 라이트: 기본 키보드(iOS 26)처럼 모든 키가 흰색
+        letterKey: hex(0xFFFFFF), fnKey: hex(0xFFFFFF))
 
     static let dark = Theme(
         bg: hex(0x1B1C1F), key: hex(0x4A4D54), funcKey: hex(0x2E3035), text: hex(0xF2F3F5),
         muted: hex(0xA9AEB7), divider: hex(0x3A3D43), accent: hex(0xE4E6EA), onAccent: hex(0x16181C),
         pinBg: hex(0x3A4660), danger: hex(0xE5453B), onDanger: hex(0xFFFFFF), row: hex(0x2E3035),
-        hint: hex(0xC3C8D0))
+        hint: hex(0xC3C8D0),
+        // 다크: 글자 키는 기본 키보드처럼 조금 더 어둡게, 기능 키와 줄바꿈은 같은 색으로 검정에 가깝게
+        letterKey: hex(0x3A3C41), fnKey: hex(0x1F2023))
 }
 
 // MARK: - 클립보드 기록
