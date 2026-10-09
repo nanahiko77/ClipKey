@@ -41,6 +41,16 @@ jobs:
       - name: Check keyboard dictionary
         run: test -s build/Build/Products/Release-iphoneos/ClipKey.app/PlugIns/ClipKeyboard.appex/ko_dict.txt
 
+      - name: Check version numbers
+        # 앱과 키보드의 빌드 번호가 실행 번호와 같아야 SideStore 가 업데이트를 받아들인다
+        run: |
+          APP=build/Build/Products/Release-iphoneos/ClipKey.app
+          for p in "$APP/Info.plist" "$APP/PlugIns/ClipKeyboard.appex/Info.plist"; do
+            v=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$p")
+            echo "$p -> $(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$p") ($v)"
+            test "$v" = "$BUILD_NUMBER"
+          done
+
       - name: Package IPA
         run: |
           mkdir Payload
