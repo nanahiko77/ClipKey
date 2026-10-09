@@ -363,7 +363,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
             settingHeader("상단바"),
             settingRow("커서 좌우 화살표", toggle(settings.showArrows, tag: 14)),
-            settingRow("영문 오타 자동 교정", toggle(settings.autoCorrect, tag: 13)),
+            settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
             settingRow("학습한 단어", wordButtons),
             settingHeader("클립보드"),
             settingRow("기록 보관 개수", segment(["20", "50", "100"], selected: countIndex, tag: 2)),
@@ -408,6 +408,8 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             rebuild()
         case 3:
             settings.doubleSpace = s.selectedSegmentIndex
+        case 4:
+            settings.correctMode = min(max(s.selectedSegmentIndex, 0), 2)
         case 2:
             settings.maxClips = [20, 50, 100][min(max(s.selectedSegmentIndex, 0), 2)]
             store.trimAndSave()
@@ -547,6 +549,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             case .failed(let why): self.dictStatus = "받지 못했어요: " + why
             }
             self.updateDictionaryRow()
+            KoCorrector.shared.reset()
             self.lastSuggestSignature = nil
         }
     }

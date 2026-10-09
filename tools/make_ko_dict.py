@@ -162,9 +162,30 @@ class Stem:
             out += [l, self.eu(drop_l=True) + "세요", neun + "데", l + "게", l + "까"]
         else:
             out += [n + "데", l]
+            if s.endswith("하"):
+                out += [s + "세요"]     # 안녕하세요, 건강하세요, 행복하세요
         out += [self.eu(drop_l=True) + "니까", s + "게", s + "기", a + "도", a + "야", p + "는데"]
+        # 말할 때 자주 쓰는 끝 (오타 교정이 바른 말을 고치지 않도록 넣어 둔다)
+        short = self.eu(drop_l=True) if self.kind == "l" else s     # 사네, 기네
+        out += [s + "잖아", p + "잖아", s + "겠다", s + "겠어", s + "겠어요", short + "네", short + "네요",
+                s + "거든", p + "거든", p + "었어", p + "었다", p + "지만"]
+        if is_verb:
+            out += [self.eu() + "려고", s + "자", neun + "구나", s + "죠"]
+        else:
+            out += [s + "구나", s + "죠"]
         return out
 
+
+# 학습용 목록에 없지만 자주 쓰는 말 (단어, 품사, 순위)
+EXTRA = [
+    ("희한하다", "형", 4000),
+    ("어이없다", "형", 3000),
+    ("수고하셨습니다", "고", 2000),
+    ("고생하셨습니다", "고", 2500),
+    ("감사드립니다", "고", 2500),
+    ("잘부탁드립니다", "고", 4000),
+]
+TYPOS = ROOT / "tools" / "ko_typos.tsv"
 
 SPECIAL = {
     "아니다": "아니다 아니에요 아니고 아닌 아니야 아니었어요 아니었다 아니면 아니라 아닙니다 아니지만 아닌데 아니니까 아니어도",
@@ -189,6 +210,12 @@ def main():
             e[1].add(pos)
             order += 1
 
+    for w, pos, rank in EXTRA:
+        e = entries.setdefault(w, [rank, set(), order])
+        e[0] = min(e[0], rank)
+        e[1].add(pos)
+        order += 1
+
     lines = []
     for w, (rank, poss, o) in sorted(entries.items(), key=lambda kv: (kv[1][0], kv[1][2])):
         if w in SPECIAL:
@@ -205,7 +232,19 @@ def main():
                 uniq.append(f)
         lines.append(" ".join(uniq))
 
-    header = "# ClipKey 한국어 추천 사전. tools/make_ko_dict.py로 만든다. 한 줄 = 한 단어와 활용형, 자주 쓰는 순서\n"
+    # 자주 틀리는 말: "!틀린꼴 바른꼴" 줄로 맨 뒤에 붙인다 (바른꼴에는 띄어쓰기가 있을 수 있다)
+    typos, seen_typo = [], set()
+    for line in TYPOS.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        wrong, right = line.split("\t")
+        if wrong == right or wrong in seen_typo:
+            continue
+        seen_typo.add(wrong)
+        typos.append(f"!{wrong} {right}")
+    lines += typos
+
+    header = "# ClipKey 한국어 추천 사전. tools/make_ko_dict.py로 만든다. 한 줄 = 한 단어와 활용형, 자주 쓰는 순서. !줄은 자주 틀리는 말\n"
     OUT.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
     total = sum(len(l.split()) for l in lines)
     print(f"{len(lines)} words, {total} forms -> {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB)")

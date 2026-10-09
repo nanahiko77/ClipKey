@@ -61,6 +61,14 @@ final class Settings {
         get { d.bool(forKey: "autoCap") }
         set { d.set(newValue, forKey: "autoCap") }
     }
+    /// 오타 교정 (한글·영문): 0 끄기, 1 추천만, 2 자동(간격을 누르면 바꿈). 예전 "영문 오타 자동 교정"을 껐으면 끄기로 시작한다.
+    var correctMode: Int {
+        get {
+            if d.object(forKey: "correctMode") == nil { return autoCorrect ? 2 : 0 }
+            return d.integer(forKey: "correctMode")
+        }
+        set { d.set(newValue, forKey: "correctMode") }
+    }
     var autoCorrect: Bool {
         get { d.bool(forKey: "autoCorrect") }
         set { d.set(newValue, forKey: "autoCorrect") }

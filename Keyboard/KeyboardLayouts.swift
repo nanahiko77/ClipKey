@@ -72,8 +72,6 @@ extension KeyboardViewController {
                 let langKey = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
                 langKey.setAttributedTitle(langTitle(), for: .normal)
                 toolbar.addArrangedSubview(langKey)
-                toolbar.addArrangedSubview(toolButton("123", width: 44, active: panel == .symbols,
-                                                      label: "숫자와 기호", action: #selector(numTapped)))
                 let box = UIView()
                 box.backgroundColor = theme.key
                 box.layer.cornerRadius = 8
@@ -96,8 +94,6 @@ extension KeyboardViewController {
             let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
             langB.setAttributedTitle(langTitle(), for: .normal)
             toolbar.addArrangedSubview(langB)
-            toolbar.addArrangedSubview(toolButton("123", width: 44, active: panel == .symbols,
-                                                  label: "숫자와 기호", action: #selector(numTapped)))
             let clipB = toolButton(symbol: "clipboard", width: 40, plain: true,
                                    color: theme.accent, label: "클립보드 열기", action: #selector(clipTapped))
             toolbar.addArrangedSubview(clipB)
@@ -228,6 +224,13 @@ extension KeyboardViewController {
         return k
     }
 
+    /// 숫자·기호 화면을 열고 닫는 키 (123 / 가 / ABC)
+    func numKey(_ title: String) -> KeyButton {
+        let k = makeKey(title, id: "num", fn: true, font: 15)
+        k.accessibilityLabel = title == "123" ? "숫자와 기호" : "글자 자판으로 돌아가기"
+        return k
+    }
+
     func spaceKey() -> KeyButton {
         iconKey("space", id: "space", label: "간격", fn: false, fallback: "간격")
     }
@@ -327,9 +330,9 @@ extension KeyboardViewController {
         let row3 = hstack([fixed(shiftK, 46), mid, fixed(backspaceKey(), 46)], equal: false)
 
         let row4 = hstack([
-            fixed(makeKey(",", fn: true), 46),
+            fixed(numKey("123"), 52),
             spaceKey(),
-            fixed(makeKey(".", fn: true), 46),
+            fixed(makeKey(".", hint: ",", fn: true), 46),      // 쉼표는 마침표를 꾹 눌러서
             fixed(returnKey(), 76),
         ], equal: false)
 
@@ -351,8 +354,11 @@ extension KeyboardViewController {
                            rounded(backspaceKey())], spacing: 6)
         let row2 = hstack([jamo("ㄹ", "ㄹ", "4"), jamo("ㅁ", "ㅁ", "5"), jamo("ㅗ ㅜ", "v:ㅗㅜ", "6"),
                            rounded(spaceKey())], spacing: 6)
+        // 문장부호 키를 반으로 나눠 옆에 123 을 둔다
+        let punctAndNum = hstack([rounded(makeKey(".,?!", id: "punct", fn: true, font: 15)),
+                                  rounded(numKey("123"))], spacing: 5)
         let row3 = hstack([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9"),
-                           rounded(makeKey(". , ? !", id: "punct", fn: true, font: 18))], spacing: 6)
+                           punctAndNum], spacing: 6)
         let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
                            rounded(makeKey("쌍자음", id: "double", font: 16)), rounded(returnKey())], spacing: 6)
         fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
@@ -375,7 +381,9 @@ extension KeyboardViewController {
         var fourth: [UIView] = [pageKey]
         for k in keys(p[3]) { fourth.append(k) }
         let row4 = hstack(fourth)
-        let row5 = hstack([spaceKey(), fixed(backspaceKey(), 59), fixed(returnKey(), 45)], equal: false)
+        let back = numKey(lang == .hangul ? "가" : "ABC")
+        back.accessibilityLabel = "글자 자판으로 돌아가기"
+        let row5 = hstack([fixed(back, 52), spaceKey(), fixed(backspaceKey(), 59), fixed(returnKey(), 45)], equal: false)
         fillRows([row1, row2, row3, row4, row5], spacing: 6, insets: UIEdgeInsets(top: 6, left: 4, bottom: 8, right: 4))
     }
 }

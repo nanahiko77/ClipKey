@@ -24,11 +24,17 @@ final class KoDictionary {
     ]
     static let header = "# ClipKey 한국어 추천 사전"
 
-    private struct Data_ {
+    struct Data_ {
         var groups: [[String]] = []
         var byCho: [Int: [Int]] = [:]
         var bySyllable: [Character: [Int]] = [:]
         var forms = 0
+        // 오타 교정용
+        var flat: [String] = []                  // 모든 활용형, 자주 쓰는 순서
+        var flatJamo: [[UInt16]] = []            // 위 활용형을 자모로 푼 것
+        var byFirstJamo: [UInt16: [Int]] = [:]   // 첫 자모별 flat 번호
+        var known: Set<String> = []              // 바른 말 확인용
+        var typos: [(wrong: String, right: String)] = []
     }
 
     private enum State { case idle, loading, ready }
@@ -86,7 +92,24 @@ final class KoDictionary {
     private static func parse(_ text: String) -> Data_ {
         var d = Data_()
         for line in text.split(separator: "\n") where !line.hasPrefix("#") {
+            if line.hasPrefix("!") {
+                // 자주 틀리는 말: "!틀린꼴 바른꼴"
+                let body = line.dropFirst()
+                guard let space = body.firstIndex(of: " ") else { continue }
+                let wrong = String(body[..<space])
+                let right = String(body[body.index(after: space)...])
+                if !wrong.isEmpty, !right.isEmpty { d.typos.append((wrong, right)) }
+                continue
+            }
             let forms = line.split(separator: " ").map(String.init)
+            for f in forms where !d.known.contains(f) {
+                d.known.insert(f)
+                let jamo = KoCorrector.jamo(f)
+                guard let first = jamo.first else { continue }
+                d.byFirstJamo[first, default: []].append(d.flat.count)
+                d.flat.append(f)
+                d.flatJamo.append(jamo)
+            }
             guard !forms.isEmpty else { continue }
             let index = d.groups.count
             d.groups.append(forms)
@@ -159,6 +182,14 @@ final class KoDictionary {
             if out.count >= limit { break }
         }
         return out
+    }
+
+    /// 오타 교정에 쓸 사전 데이터. 아직 다 읽지 못했으면 nil.
+    func snapshot() -> Data_? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard state == .ready, loaded else { return nil }
+        return data
     }
 
     // MARK: - 받기

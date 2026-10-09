@@ -12,9 +12,11 @@
   - `KeyViews.swift` 키 버튼(꾹 눌러 보조 글자), 클립보드 목록 줄
   - `Stores.swift` 설정, 색, 클립보드 기록, 학습한 단어 저장
   - `KoDictionary.swift` 한국어 추천 사전 읽기와 검색
+  - `KoCorrector.swift` 한글 오타 교정 (자모 거리 + 자판 이웃 키 + 조사 떼기, 자주 틀리는 말 표)
   - `ko_dict.txt` 한국어 추천 사전 (만든 파일, 직접 고치지 않는다)
 - `tools/` 사전 만들기
   - `ko_vocab.tsv` 국립국어원 한국어 학습용 어휘 목록 (UTF-8로 바꾼 것)
+  - `ko_typos.tsv` 자주 틀리는 말 (틀린꼴 → 바른꼴). 언제나 틀린 꼴만 넣는다
   - `make_ko_dict.py` 어휘 목록에서 `ko_dict.txt`를 만든다. 동사·형용사는 활용형(갔어, 추워요, 들은 …)까지 넣는다
 - `project.yml` XcodeGen 설정. Xcode 프로젝트 파일은 빌드할 때 생성
 - `.github/workflows/build.yml` 서명 없는 ipa를 만드는 GitHub Actions
