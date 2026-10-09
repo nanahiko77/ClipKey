@@ -24,6 +24,7 @@ final class Settings {
         get { d.integer(forKey: "hangulLayout") }
         set { d.set(newValue, forKey: "hangulLayout") }
     }
+    /// 보조키 표시 (꾹 눌러 숫자·기호). 이름은 예전 그대로지만 모든 자판에 적용된다.
     var naraHints: Bool {
         get { d.bool(forKey: "naraHints") }
         set { d.set(newValue, forKey: "naraHints") }
@@ -331,11 +332,36 @@ final class ClipStore {
 
 // MARK: - 학습한 단어
 
+/// 파일 저장을 바로 하지 않고 잠깐 모았다가 한 번에 한다. 키보드가 내려갈 때는 flush() 로 바로 저장한다.
+final class SaveThrottle {
+    private var timer: Timer?
+    private let action: () -> Void
+
+    init(_ action: @escaping () -> Void) { self.action = action }
+
+    func schedule() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
+            self?.flush()
+        }
+    }
+
+    func flush() {
+        guard timer != nil else { return }
+        timer?.invalidate()
+        timer = nil
+        action()
+    }
+}
+
 /// 자주 친 단어를 횟수와 함께 기기 안에 저장한다.
 /// 직접 넣은 단어는 바로, 자동으로 배운 단어는 threshold 번 이상 쳤을 때부터 추천에 쓴다.
 final class WordStore {
     private var counts: [String: Int] = [:]
     private let url: URL
+    private lazy var saver = SaveThrottle { [weak self] in self?.writeNow() }
+    /// 정렬한 목록. 키를 누를 때마다 다시 정렬하지 않도록 기억해 두고, 단어가 바뀌면 지운다.
+    private var cachedList: [String]?
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -347,14 +373,21 @@ final class WordStore {
         }
     }
 
-    /// 숫자가 섞인 글자, 미완성 낱자, 한 글자짜리는 배우지 않는다.
+    /// 배울 만한 단어인지: 숫자가 섞인 글자, 미완성 낱자, 한 글자짜리는 배우지 않는다.
+    static func learnable(_ w: String) -> Bool {
+        guard w.count >= 2, w.count <= 20 else { return false }
+        guard w.allSatisfy({ $0.isLetter }) else { return false }
+        return !w.contains(where: { HangulComposer.isJamo($0) })
+    }
+
     func learn(_ raw: String, force: Bool = false) {
         let w = raw.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
-        guard w.count >= 2, w.count <= 20 else { return }
-        guard w.allSatisfy({ $0.isLetter }) else { return }
-        guard !w.contains(where: { HangulComposer.isJamo($0) }) else { return }
-        let next = (counts[w] ?? 0) + 1
+        guard WordStore.learnable(w) else { return }
+        let before = counts[w] ?? 0
+        let next = before + 1
         counts[w] = force ? max(next, WordStore.threshold) : next
+        // 추천 목록에 들어가거나 순서가 바뀔 수 있을 때만 목록을 다시 만든다
+        if counts[w]! >= WordStore.threshold { cachedList = nil }
         if counts.count > 2000 { prune() }
         save()
     }
@@ -370,6 +403,7 @@ final class WordStore {
         let w = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !w.isEmpty, w.count <= 60 else { return }
         counts[w] = max(counts[w] ?? 0, WordStore.manualCount)
+        cachedList = nil
         save()
     }
 
@@ -377,9 +411,12 @@ final class WordStore {
 
     /// 자주 친 순서
     var list: [String] {
-        counts.filter { $0.value >= WordStore.threshold }
+        if let l = cachedList { return l }
+        let l = counts.filter { $0.value >= WordStore.threshold }
             .sorted { a, b in a.value != b.value ? a.value > b.value : a.key < b.key }
             .map { $0.key }
+        cachedList = l
+        return l
     }
 
     func matches(_ query: String) -> [String] {
@@ -388,21 +425,99 @@ final class WordStore {
 
     func remove(_ w: String) {
         counts[w] = nil
+        cachedList = nil
         save()
     }
 
     func clear() {
         counts = [:]
+        cachedList = nil
         save()
     }
+
+    func flush() { saver.flush() }
 
     private func prune() {
         let keep = counts.sorted { $0.value > $1.value }.prefix(1500)
         counts = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+        cachedList = nil
     }
 
-    private func save() {
+    private func save() { saver.schedule() }
+
+    private func writeNow() {
         guard let data = try? JSONEncoder().encode(counts) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+// MARK: - 다음 단어
+
+/// 앞 단어 다음에 이어 친 단어를 센다. 간격을 누른 뒤 평소 이어 쓰던 단어를 추천한다. 기기 안에만 저장한다.
+final class NextWordStore {
+    private var pairs: [String: [String: Int]] = [:]
+    private var total = 0
+    private let url: URL
+    private lazy var saver = SaveThrottle { [weak self] in self?.writeNow() }
+    static let threshold = 2
+    static let maxPairs = 3000
+
+    init() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        url = dir.appendingPathComponent("nextwords.json")
+        if let data = try? Data(contentsOf: url),
+           let saved = try? JSONDecoder().decode([String: [String: Int]].self, from: data) {
+            pairs = saved
+            total = saved.values.reduce(0) { $0 + $1.count }
+        }
+    }
+
+    func learn(previous: String, next: String) {
+        guard WordStore.learnable(previous), WordStore.learnable(next) else { return }
+        if pairs[previous]?[next] == nil { total += 1 }
+        pairs[previous, default: [:]][next, default: 0] += 1
+        if total > NextWordStore.maxPairs { prune() }
+        saver.schedule()
+    }
+
+    /// 앞 단어 다음에 threshold 번 이상 쳤던 단어, 많이 친 순서
+    func predictions(after previous: String, limit: Int) -> [String] {
+        guard let next = pairs[previous] else { return [] }
+        return next.filter { $0.value >= NextWordStore.threshold }
+            .sorted { a, b in a.value != b.value ? a.value > b.value : a.key < b.key }
+            .prefix(limit).map { $0.key }
+    }
+
+    func remove(_ word: String) {
+        for key in Array(pairs.keys) {
+            pairs[key]?[word] = nil
+            if pairs[key]?.isEmpty == true { pairs[key] = nil }
+        }
+        pairs[word] = nil
+        total = pairs.values.reduce(0) { $0 + $1.count }
+        saver.schedule()
+    }
+
+    func clear() {
+        pairs = [:]
+        total = 0
+        saver.schedule()
+    }
+
+    func flush() { saver.flush() }
+
+    /// 한 번만 친 짝부터 지운다
+    private func prune() {
+        for key in Array(pairs.keys) {
+            pairs[key] = pairs[key]?.filter { $0.value > 1 }
+            if pairs[key]?.isEmpty == true { pairs[key] = nil }
+        }
+        total = pairs.values.reduce(0) { $0 + $1.count }
+    }
+
+    private func writeNow() {
+        guard let data = try? JSONEncoder().encode(pairs) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }

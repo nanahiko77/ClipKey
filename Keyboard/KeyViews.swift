@@ -1,5 +1,45 @@
 import UIKit
 
+/// 자판이 들어가는 영역. 키 사이 틈이나 가장자리를 눌러도 가장 가까운 키가 눌리게 한다.
+/// (키마다 버튼이라 틈을 누르면 아무 키도 입력되지 않아서, 빠르게 칠 때 글자가 빠졌다)
+final class KeyArea: UIView {
+    private var keys: [KeyButton]?
+    /// 이 거리(pt) 안에 키가 있으면 그 키로 본다
+    static let reach: CGFloat = 14
+
+    /// 자판을 새로 그렸으면 부른다
+    func invalidateKeys() { keys = nil }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        // 키, 버튼, 스위치, 목록 같은 것은 그대로 둔다. 빈 바탕이나 줄 사이일 때만 가까운 키를 찾는다.
+        if let h = hit, !(h === self || type(of: h) == UIStackView.self) { return hit }
+        guard self.point(inside: point, with: event) else { return hit }
+        if keys == nil { keys = KeyArea.collect(self) }
+        var best: KeyButton?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for k in keys ?? [] where !k.isHidden && k.superview != nil {
+            let f = k.convert(k.bounds, to: self)
+            let dx = max(f.minX - point.x, 0, point.x - f.maxX)
+            let dy = max(f.minY - point.y, 0, point.y - f.maxY)
+            let d = dx * dx + dy * dy
+            if d < bestDistance {
+                bestDistance = d
+                best = k
+            }
+        }
+        if let b = best, bestDistance <= KeyArea.reach * KeyArea.reach { return b }
+        return hit
+    }
+
+    private static func collect(_ v: UIView) -> [KeyButton] {
+        v.subviews.flatMap { sub -> [KeyButton] in
+            if let k = sub as? KeyButton { return [k] }
+            return collect(sub)
+        }
+    }
+}
+
 /// 자판의 키 하나. 보조 글자가 있으면 꾹 눌렀을 때 말풍선을 띄우고, 뗄 때 보조 글자를 입력한다.
 final class KeyButton: UIButton {
     var id = ""
@@ -23,7 +63,18 @@ final class KeyButton: UIButton {
     var altHoverBackground: UIColor = .red
     var altHoverText: UIColor = .white
 
+    /// 왼쪽으로 밀기 (지우기 키의 단어 단위 삭제). 0 이면 쓰지 않는다.
+    /// 밀기 시작한 뒤 swipeStep 만큼 더 밀 때마다 지울 단어가 하나씩 늘고, 떼면 onSwipeCommit 이 실행된다.
+    var swipeStep: CGFloat = 0
+    var swipeTitle: ((Int) -> String)?
+    var onSwipeChange: ((Int) -> Void)?
+    var onSwipeCommit: ((Int) -> Void)?
+    static let swipeStart: CGFloat = 24
+
     private let hintLabel = UILabel()
+    private var startX: CGFloat = 0
+    private var swipeCount: Int?
+    private var swipeBubble: UILabel?
     private var holdTimer: Timer?
     private var bubble: UILabel?
     private var altTimer: Timer?
@@ -77,6 +128,11 @@ final class KeyButton: UIButton {
     @objc private func didTouchUp() {
         holdTimer?.invalidate()
         holdTimer = nil
+        if let n = endSwipe() {
+            onUp?()
+            onSwipeCommit?(n)
+            return
+        }
         let alt = endAlt()
         onUp?()
         if alt {
@@ -94,13 +150,26 @@ final class KeyButton: UIButton {
         holdTimer?.invalidate()
         holdTimer = nil
         hideBubble()
+        if let n = endSwipe() {
+            // 밀어서 키 밖으로 나가도 단어 삭제는 그대로 한다
+            onUp?()
+            onSwipeCommit?(n)
+            return
+        }
         let alt = endAlt()
         onUp?()
         if alt { onAlt?() }
     }
 
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        startX = touch.location(in: self).x
+        swipeCount = nil
+        return super.beginTracking(touch, with: event)
+    }
+
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let result = super.continueTracking(touch, with: event)
+        trackSwipe(touch)
         if let b = altBubble, let host = bubbleHost {
             let inside = b.frame.insetBy(dx: -12, dy: -12).contains(touch.location(in: host))
             if inside != altHover {
@@ -115,6 +184,55 @@ final class KeyButton: UIButton {
             }
         }
         return result
+    }
+
+    private func trackSwipe(_ touch: UITouch) {
+        guard swipeStep > 0, altBubble == nil else { return }
+        let dx = startX - touch.location(in: self).x
+        if swipeCount == nil {
+            guard dx > KeyButton.swipeStart else { return }
+            // 밀기 시작: 전체 삭제 말풍선은 띄우지 않는다
+            altTimer?.invalidate()
+            altTimer = nil
+            swipeCount = -1
+        }
+        let n = dx > KeyButton.swipeStart ? 1 + Int((dx - KeyButton.swipeStart) / swipeStep) : 0
+        guard n != swipeCount else { return }
+        swipeCount = n
+        showSwipeBubble(n)
+        onSwipeChange?(n)
+    }
+
+    private func showSwipeBubble(_ n: Int) {
+        guard let host = bubbleHost else { return }
+        if swipeBubble == nil {
+            let f = convert(bounds, to: host)
+            let w: CGFloat = 112
+            let h: CGFloat = 40
+            let x = max(2, min(f.maxX - w, host.bounds.width - w - 2))
+            let y = max(0, f.minY - h - 4)
+            let label = UILabel(frame: CGRect(x: x, y: y, width: w, height: h))
+            label.textAlignment = .center
+            label.font = .boldSystemFont(ofSize: 15)
+            label.layer.cornerRadius = 8
+            label.layer.masksToBounds = true
+            host.addSubview(label)
+            swipeBubble = label
+        }
+        swipeBubble?.text = swipeTitle?(n) ?? "\(n)"
+        swipeBubble?.backgroundColor = n > 0 ? altHoverBackground : altBackground
+        swipeBubble?.textColor = n > 0 ? altHoverText : altText
+    }
+
+    /// 밀기 중이었으면 말풍선을 닫고 지울 단어 수를 돌려준다
+    private func endSwipe() -> Int? {
+        guard let n = swipeCount else { return nil }
+        swipeCount = nil
+        swipeBubble?.removeFromSuperview()
+        swipeBubble = nil
+        altTimer?.invalidate()
+        altTimer = nil
+        return max(n, 0)
     }
 
     private func showAlt() {

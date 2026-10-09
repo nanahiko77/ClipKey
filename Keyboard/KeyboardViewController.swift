@@ -1,7 +1,7 @@
 import UIKit
 import AudioToolbox
 
-enum SuggestKind { case correction, original, learned, pinned, dict }
+enum SuggestKind { case correction, original, learned, pinned, dict, next }
 
 /// 키보드 본체: 상태, 입력 처리, 추천 단어.
 /// 자판 배치는 KeyboardLayouts.swift, 패널은 KeyboardPanels.swift 에 있다.
@@ -17,6 +17,7 @@ final class KeyboardViewController: UIInputViewController {
 
     let store = ClipStore()
     let words = WordStore()
+    let nextWords = NextWordStore()
     let settings = Settings.shared
     let checker = UITextChecker()
     lazy var koLanguage: String? = UITextChecker.availableLanguages.first { $0.hasPrefix("ko") }
@@ -51,10 +52,28 @@ final class KeyboardViewController: UIInputViewController {
     // 화면
     let toolbar = UIStackView()
     let divider = UIView()
-    let keyArea = UIView()
+    let keyArea = KeyArea()
     let suggestScroll = UIScrollView()
     let suggestStack = UIStackView()
     var suggestItems: [(text: String, kind: SuggestKind)] = []
+    var suggestPending = false
+    var lastSuggestSignature: String?
+    var toolbarTyping = false
+    // 입력 중에는 숨기는 상단바 버튼 (상단바 C안)
+    weak var clipToolButton: UIButton?
+    weak var arrowLeftButton: UIButton?
+    weak var arrowRightButton: UIButton?
+    weak var hideToolButton: UIButton?
+    /// 마지막으로 그린 자판의 조건. 키보드가 다시 뜰 때 같으면 새로 그리지 않는다.
+    var builtSignature = ""
+    lazy var impact = UIImpactFeedbackGenerator(style: .light)
+
+    // 설정의 사전 줄
+    var dictStatus: String?
+    var dictBusy = false
+    weak var dictValueLabel: UILabel?
+    weak var dictCaptionLabel: UILabel?
+    weak var dictButton: UIButton?
     var letterKeys: [KeyButton] = []
     weak var shiftKey: KeyButton?
 
@@ -126,13 +145,22 @@ final class KeyboardViewController: UIInputViewController {
             keyArea.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+        KoDictionary.shared.preload()
         rebuild()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         capture()
-        rebuild()
+        // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
+        resolveTheme()
+        if layoutSignature() != builtSignature {
+            rebuild()
+        } else {
+            lastSuggestSignature = nil
+            refreshSuggestions()
+        }
+        if settings.haptic { impact.prepare() }
         autoCapIfNeeded()
         pasteTimer?.invalidate()
         pasteTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -147,6 +175,8 @@ final class KeyboardViewController: UIInputViewController {
         stopDelete()
         resetComposer()
         addBuffer = nil
+        words.flush()
+        nextWords.flush()
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
@@ -181,13 +211,20 @@ final class KeyboardViewController: UIInputViewController {
         divider.backgroundColor = theme.divider
         buildToolbar()
         buildBody()
+        lastSuggestSignature = nil
         refreshSuggestions()
+        builtSignature = layoutSignature()
+    }
+
+    func layoutSignature() -> String {
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
     func haptic() {
         if settings.haptic {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            impact.impactOccurred()
+            impact.prepare()          // 다음 진동이 늦지 않도록 미리 준비
         }
         if settings.keySound {
             AudioServicesPlaySystemSound(1104)     // 시스템 키보드 누름 소리
@@ -470,13 +507,15 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         let word = currentWord()
+        let previous = previousWord(in: String((docBefore ?? "").dropLast(word.count)))
+        var final = word
         if panel == .keys, lang == .english, settings.autoCorrect, separator == " ",
            let fix = correction(for: word) {
             replaceWord(word, with: fix)
-            words.learn(fix)
-        } else {
-            words.learn(word)
+            final = fix
         }
+        words.learn(final)
+        if separator == " ", let p = previous { nextWords.learn(previous: p, next: final) }
         docInsert(separator)
         autoCapIfNeeded()
     }
@@ -549,6 +588,25 @@ final class KeyboardViewController: UIInputViewController {
             self.deleteTicks += 1
             if self.deleteTicks > 4 { self.backspaceOnce() }
         }
+    }
+
+    /// 지우기 키를 왼쪽으로 밀었을 때: 커서 앞 단어 n개를 지운다. 띄어쓰기와 줄바꿈은 단어에 붙여 같이 지운다.
+    func deleteWords(_ n: Int) {
+        stopDelete()
+        guard n > 0 else { return }
+        resetComposer()
+        let ctx = Array(docBefore ?? "")
+        var i = ctx.count
+        for _ in 0..<n {
+            while i > 0, ctx[i - 1] == " " || ctx[i - 1] == "\n" { i -= 1 }
+            let end = i
+            while i > 0, ctx[i - 1].isLetter || ctx[i - 1].isNumber { i -= 1 }
+            if i == end, i > 0 { i -= 1 }      // 단어가 아니면 문장부호 하나
+            if i == 0 { break }
+        }
+        for _ in 0..<(ctx.count - i) { docDelete() }
+        lastKeyID = "⌫"
+        refreshSuggestions()
     }
 
     func stopDelete() {
@@ -656,26 +714,41 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: - 추천 단어
 
+    /// 추천을 다시 계산하라는 요청. 한 번의 키 입력에서 여러 번 불려도 실제 계산은 한 번만 한다.
     func refreshSuggestions() {
-        guard !adding, panel == .keys || panel == .symbols else { return }
-        suggestStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        suggestItems = []
-
-        if let clip = freshClip {
-            let chip = clipChip(clip)
-            suggestStack.addArrangedSubview(chip)
-            suggestStack.setCustomSpacing(4, after: chip)
+        guard !suggestPending else { return }
+        suggestPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.suggestPending = false
+            self.renderSuggestions()
         }
-        // 숫자·기호 화면에서도 추천한다 (등록해 둔 전화번호 등)
-        let word = currentWord()
-        guard !word.isEmpty else { return }
+    }
 
+    /// 간격 하나를 건너 바로 앞 단어. 줄바꿈이나 문장부호로 끊겼으면 nil.
+    func previousWord(in ctx: String) -> String? {
+        guard ctx.hasSuffix(" ") else { return nil }
+        var chars: [Character] = []
+        for ch in ctx.dropLast().reversed() {
+            if ch.isLetter { chars.append(ch) } else { break }
+        }
+        let w = String(chars.reversed())
+        return WordStore.learnable(w) ? w : nil
+    }
+
+    func suggestionItems(for word: String) -> [(text: String, kind: SuggestKind)] {
         var items: [(text: String, kind: SuggestKind)] = []
         func add(_ t: String, _ k: SuggestKind) {
             guard items.count < 6, t != word, !items.contains(where: { $0.text == t }) else { return }
             items.append((t, k))
         }
-
+        if word.isEmpty {
+            // 간격을 누른 뒤: 앞 단어 다음에 평소 이어 쓰던 단어
+            if panel == .keys, let prev = previousWord(in: docBefore ?? "") {
+                for w in nextWords.predictions(after: prev, limit: 3) { add(w, .next) }
+            }
+            return items
+        }
         // 순서: 직접 넣은 단어 → 맞춤법(교정, 사전) → 자주 친 단어 → 고정한 클립
         let matched = words.matches(word)
         for w in matched where words.isManual(w) { add(w, .learned) }
@@ -701,60 +774,161 @@ final class KeyboardViewController: UIInputViewController {
         for c in store.clips where c.pinned && c.text.count > word.count && c.text.lowercased().hasPrefix(lower) {
             add(c.text, .pinned)
         }
+        return items
+    }
 
-        var previousPlain = false
-        for (i, item) in items.enumerated() {
-            var title = item.text.replacingOccurrences(of: "\n", with: " ")
-            if title.count > 14 { title = String(title.prefix(14)) + "…" }
-            let isChip = item.kind == .learned || item.kind == .pinned
-            let armed = item.kind == .learned && item.text == armedSuggestion
-            let b = UIButton(type: .system)
-            b.tag = i
-            b.addTarget(self, action: #selector(suggestionTapped(_:)), for: .touchUpInside)
-            if isChip {
-                // 내가 등록했거나 자주 친 단어는 별표, 고정한 클립은 압정이 붙은 반투명 칩.
-                // 길게 눌러 삭제 대기가 되면 빨간 "단어 ×" 칩으로 바뀐다.
-                let iconName = armed ? "xmark" : (item.kind == .learned ? "star" : "pin.fill")
-                b.setImage(Icon.image(iconName, size: 13, line: armed ? 2.5 : 1.75), for: .normal)
-                b.setTitle(armed ? title + " " : " " + title, for: .normal)
-                if armed { b.semanticContentAttribute = .forceRightToLeft }
-                b.titleLabel?.font = armed ? .boldSystemFont(ofSize: 14) : .systemFont(ofSize: 14)
-                b.tintColor = armed ? theme.onDanger : theme.muted
-                b.setTitleColor(armed ? theme.onDanger : theme.text, for: .normal)
-                b.backgroundColor = armed ? theme.danger : theme.key.withAlphaComponent(isDark ? 0.35 : 0.6)
-                b.layer.cornerRadius = 15
-                b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 10)
-                b.heightAnchor.constraint(equalToConstant: 30).isActive = true
-                if item.kind == .learned {
-                    b.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(suggestionLongPressed(_:))))
-                }
-                previousPlain = false
-            } else {
-                if previousPlain {
-                    let line = UIView()
-                    line.backgroundColor = theme.divider
-                    line.widthAnchor.constraint(equalToConstant: 1).isActive = true
-                    line.heightAnchor.constraint(equalToConstant: 20).isActive = true
-                    suggestStack.addArrangedSubview(line)
-                }
-                b.setTitle(title, for: .normal)
-                let strong = item.kind == .correction
-                b.titleLabel?.font = strong ? .boldSystemFont(ofSize: 15) : .systemFont(ofSize: 15)
-                b.setTitleColor(strong ? theme.text : theme.muted, for: .normal)
-                b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
-                previousPlain = true
-            }
-            suggestStack.addArrangedSubview(b)
-            suggestStack.setCustomSpacing(isChip ? 4 : 0, after: b)
+    /// 상단바 C안: 글자를 치는 중에는 한/영, 123 만 남기고 나머지 자리를 추천 단어에 준다
+    func setToolbarTyping(_ typing: Bool) {
+        toolbarTyping = typing
+        for b in [clipToolButton, arrowLeftButton, arrowRightButton, hideToolButton] {
+            b?.isHidden = typing
         }
+    }
+
+    func renderSuggestions() {
+        guard !adding, panel == .keys || panel == .symbols else { return }
+        let word = currentWord()
+        let typing = panel == .keys && !word.isEmpty
+        let items = suggestionItems(for: word)
+        let clip = typing ? nil : freshClip      // 치는 중에는 복사 칩을 잠깐 숨긴다
+
+        // 지난번과 같으면 화면을 건드리지 않는다
+        var signature = "\(typing)|\(clip?.id.uuidString ?? "")|\(armedSuggestion ?? "")|\(isDark)"
+        for item in items { signature += "|\(item.kind):\(item.text)" }
+        if signature == lastSuggestSignature { return }
+        lastSuggestSignature = signature
+
+        setToolbarTyping(typing)
+        suggestStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         suggestItems = items
+
+        if let clip = clip {
+            let chip = clipChip(clip)
+            suggestStack.addArrangedSubview(chip)
+            suggestStack.setCustomSpacing(4, after: chip)
+        }
+
+        if typing && !items.isEmpty {
+            buildSlots(items)
+        } else {
+            var previousPlain = false
+            for (i, item) in items.enumerated() {
+                let b = suggestionButton(item, index: i, slot: false, best: false)
+                let isChip = item.kind == .learned || item.kind == .pinned
+                if !isChip && previousPlain { suggestStack.addArrangedSubview(separatorLine(height: 20)) }
+                suggestStack.addArrangedSubview(b)
+                suggestStack.setCustomSpacing(isChip ? 4 : 0, after: b)
+                previousPlain = !isChip
+            }
+        }
         suggestScroll.setContentOffset(.zero, animated: false)
+    }
+
+    func separatorLine(height: CGFloat) -> UIView {
+        let line = UIView()
+        line.backgroundColor = theme.divider
+        line.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        line.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return line
+    }
+
+    /// 고정 3칸: 가운데에 가장 잘 맞는 단어, 왼쪽에 둘째(영문 교정일 때는 친 그대로), 오른쪽에 셋째.
+    /// 4번째부터는 오른쪽으로 밀어서 본다.
+    func buildSlots(_ items: [(text: String, kind: SuggestKind)]) {
+        var rest = Array(items.indices)
+        var left: Int?
+        if let o = items.firstIndex(where: { $0.kind == .original }) {
+            left = o
+            rest.removeAll { $0 == o }
+        }
+        let center = rest.first
+        if !rest.isEmpty { rest.removeFirst() }
+        if left == nil, !rest.isEmpty { left = rest.removeFirst() }
+        let right = rest.isEmpty ? nil : rest.removeFirst()
+
+        for (pos, index) in [left, center, right].enumerated() {
+            let slot = UIView()
+            slot.translatesAutoresizingMaskIntoConstraints = false
+            slot.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0).isActive = true
+            if let i = index {
+                let b = suggestionButton(items[i], index: i, slot: true, best: pos == 1)
+                pinEdges(b, in: slot, insets: UIEdgeInsets(top: 3, left: 3, bottom: 3, right: 3))
+            }
+            if pos < 2 {
+                let line = separatorLine(height: 20)
+                line.translatesAutoresizingMaskIntoConstraints = false
+                slot.addSubview(line)
+                line.trailingAnchor.constraint(equalTo: slot.trailingAnchor).isActive = true
+                line.centerYAnchor.constraint(equalTo: slot.centerYAnchor).isActive = true
+            }
+            suggestStack.addArrangedSubview(slot)
+        }
+        for i in rest {
+            suggestStack.addArrangedSubview(separatorLine(height: 20))
+            suggestStack.addArrangedSubview(suggestionButton(items[i], index: i, slot: false, best: false))
+        }
+    }
+
+    func suggestionButton(_ item: (text: String, kind: SuggestKind), index: Int, slot: Bool, best: Bool) -> UIButton {
+        var title = item.text.replacingOccurrences(of: "\n", with: " ")
+        if title.count > 14 { title = String(title.prefix(14)) + "…" }
+        let isChip = item.kind == .learned || item.kind == .pinned
+        let armed = item.kind == .learned && item.text == armedSuggestion
+        let b = UIButton(type: .system)
+        b.tag = index
+        b.addTarget(self, action: #selector(suggestionTapped(_:)), for: .touchUpInside)
+        if item.kind == .learned {
+            b.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(suggestionLongPressed(_:))))
+        }
+        if slot {
+            // 칸 안에서는 모두 글자로 보여 주고, 직접 넣었거나 자주 친 단어는 별, 고정 클립은 압정을 붙인다
+            if isChip || armed {
+                let iconName = armed ? "xmark" : (item.kind == .learned ? "star" : "pin.fill")
+                b.setImage(Icon.image(iconName, size: 12, line: armed ? 2.5 : 1.75), for: .normal)
+                b.setTitle(" " + title, for: .normal)
+                if armed { b.semanticContentAttribute = .forceRightToLeft }
+            } else {
+                b.setTitle(title, for: .normal)
+            }
+            b.titleLabel?.font = best || armed ? .boldSystemFont(ofSize: 16) : .systemFont(ofSize: 16)
+            b.titleLabel?.lineBreakMode = .byTruncatingTail
+            b.titleLabel?.adjustsFontSizeToFitWidth = true
+            b.titleLabel?.minimumScaleFactor = 0.75
+            b.tintColor = armed ? theme.onDanger : theme.muted
+            b.setTitleColor(armed ? theme.onDanger : theme.text, for: .normal)
+            b.backgroundColor = armed ? theme.danger : .clear
+            b.layer.cornerRadius = 8
+            return b
+        }
+        if isChip {
+            // 내가 등록했거나 자주 친 단어는 별표, 고정한 클립은 압정이 붙은 반투명 칩.
+            // 길게 눌러 삭제 대기가 되면 빨간 "단어 ×" 칩으로 바뀐다.
+            let iconName = armed ? "xmark" : (item.kind == .learned ? "star" : "pin.fill")
+            b.setImage(Icon.image(iconName, size: 13, line: armed ? 2.5 : 1.75), for: .normal)
+            b.setTitle(armed ? title + " " : " " + title, for: .normal)
+            if armed { b.semanticContentAttribute = .forceRightToLeft }
+            b.titleLabel?.font = armed ? .boldSystemFont(ofSize: 14) : .systemFont(ofSize: 14)
+            b.tintColor = armed ? theme.onDanger : theme.muted
+            b.setTitleColor(armed ? theme.onDanger : theme.text, for: .normal)
+            b.backgroundColor = armed ? theme.danger : theme.key.withAlphaComponent(isDark ? 0.35 : 0.6)
+            b.layer.cornerRadius = 15
+            b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 10)
+            b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        } else {
+            b.setTitle(title, for: .normal)
+            let strong = item.kind == .correction
+            b.titleLabel?.font = strong ? .boldSystemFont(ofSize: 15) : .systemFont(ofSize: 15)
+            b.setTitleColor(strong || item.kind == .next ? theme.text : theme.muted, for: .normal)
+            b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+        }
+        return b
     }
 
     func clipChip(_ clip: Clip) -> UIButton {
         let b = UIButton(type: .system)
         var title = clip.text.replacingOccurrences(of: "\n", with: " ")
-        if title.count > 9 { title = String(title.prefix(9)) + "…" }
+        if title.count > 16 { title = String(title.prefix(16)) + "…" }
         b.setTitle(" " + title, for: .normal)
         b.setImage(Icon.image("clipboard", size: 14, line: 2), for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 13)
@@ -785,6 +959,7 @@ final class KeyboardViewController: UIInputViewController {
             suggestArmTimer?.invalidate()
             armedSuggestion = nil
             words.remove(item.text)
+            nextWords.remove(item.text)
             refreshSuggestions()
             return
         }

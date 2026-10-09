@@ -358,7 +358,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         let rows: [UIView] = [
             settingHeader("자판"),
             settingRow("한글 자판", segment(["나랏글", "두벌식"], selected: settings.hangulLayout, tag: 0)),
-            settingRow("나랏글 보조키 (꾹 눌러 숫자)", toggle(settings.naraHints, tag: 10)),
+            settingRow("보조키 표시 (꾹 눌러 숫자·기호)", toggle(settings.naraHints, tag: 10)),
             settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
             settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
             settingHeader("상단바"),
@@ -372,6 +372,9 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("화면 모드", segment(["시스템", "라이트", "다크"], selected: settings.themeMode, tag: 1)),
             settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
             settingRow("키 누를 때 소리", toggle(settings.keySound, tag: 15)),
+            settingHeader("정보"),
+            settingRow("버전", valueLabel(appVersion)),
+            dictionaryRow(),
         ]
 
         let stack = UIStackView(arrangedSubviews: rows)
@@ -426,6 +429,128 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         }
     }
 
+    // MARK: 정보
+
+    var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let v = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(v) (\(b))"
+    }
+
+    func valueLabel(_ text: String) -> UILabel {
+        let l = UILabel()
+        l.text = text
+        l.font = .systemFont(ofSize: 14)
+        l.textColor = theme.muted
+        l.setContentHuggingPriority(.required, for: .horizontal)
+        l.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return l
+    }
+
+    static let numberFormat: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f
+    }()
+
+    func formatted(_ n: Int) -> String {
+        KeyboardViewController.numberFormat.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    /// 맞춤법 사전 줄: 제목과 작은 설명, 단어 수, 받기/업데이트 버튼
+    func dictionaryRow() -> UIView {
+        let title = UILabel()
+        title.text = "맞춤법 사전"
+        title.font = .systemFont(ofSize: 15)
+        title.textColor = theme.text
+        let caption = UILabel()
+        caption.font = .systemFont(ofSize: 12)
+        caption.textColor = theme.muted
+        caption.adjustsFontSizeToFitWidth = true
+        caption.minimumScaleFactor = 0.8
+        let texts = UIStackView(arrangedSubviews: [title, caption])
+        texts.axis = .vertical
+        texts.spacing = 2
+        texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let value = valueLabel("")
+        let button = toolButton("업데이트", action: #selector(dictionaryButtonTapped))
+        button.titleLabel?.font = .boldSystemFont(ofSize: 14)
+
+        let row = UIStackView(arrangedSubviews: [texts, value, button])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 8
+        row.heightAnchor.constraint(equalToConstant: 48).isActive = true
+
+        dictCaptionLabel = caption
+        dictValueLabel = value
+        dictButton = button
+        updateDictionaryRow()
+        if KoDictionary.shared.info == nil {
+            KoDictionary.shared.preload { [weak self] in self?.updateDictionaryRow() }
+        }
+        return row
+    }
+
+    func updateDictionaryRow() {
+        guard let value = dictValueLabel, let caption = dictCaptionLabel, let button = dictButton else { return }
+        let info = KoDictionary.shared.info
+        let missing = info.map { $0.words == 0 } ?? false
+        if let info = info, !missing {
+            value.text = formatted(info.words) + "단어"
+            value.font = .systemFont(ofSize: 14)
+            value.textColor = theme.muted
+            var where_ = "기본 사전"
+            if case .downloaded(let date) = info.source {
+                let f = DateFormatter()
+                f.dateFormat = "MM/dd"
+                where_ = "받은 사전 · " + f.string(from: date)
+            }
+            caption.text = "활용형 \(formatted(info.forms))개 · " + where_
+        } else if missing {
+            value.text = "없음"
+            value.font = .boldSystemFont(ofSize: 14)
+            value.textColor = theme.danger
+            caption.text = "전체 접근 허용이 켜져 있어야 받을 수 있어요"
+        } else {
+            value.text = ""
+            caption.text = "사전을 읽는 중…"
+        }
+        if let status = dictStatus { caption.text = status }
+
+        button.setTitle(dictBusy ? "받는 중" : (missing ? "사전 받기" : "업데이트"), for: .normal)
+        button.isEnabled = !dictBusy && info != nil
+        button.backgroundColor = missing ? theme.accent : theme.funcKey
+        button.setTitleColor(missing ? theme.onAccent : theme.text, for: .normal)
+        button.alpha = button.isEnabled ? 1 : 0.5
+    }
+
+    @objc func dictionaryButtonTapped() {
+        guard !dictBusy else { return }
+        guard hasFullAccess else {
+            dictStatus = "전체 접근 허용을 켜야 받을 수 있어요"
+            updateDictionaryRow()
+            return
+        }
+        dictBusy = true
+        dictStatus = "GitHub에서 받는 중…"
+        updateDictionaryRow()
+        KoDictionary.shared.download { [weak self] result in
+            guard let self = self else { return }
+            self.dictBusy = false
+            switch result {
+            case .updated(let n): self.dictStatus = "새 사전을 받았어요 (\(self.formatted(n))단어)"
+            case .alreadyLatest: self.dictStatus = "이미 최신 사전이에요"
+            case .failed(let why): self.dictStatus = "받지 못했어요: " + why
+            }
+            self.updateDictionaryRow()
+            self.lastSuggestSignature = nil
+        }
+    }
+
     @objc func openWords() {
         panel = .words
         rebuild()
@@ -434,6 +559,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     @objc func clearWordsTapped(_ sender: UIButton) {
         guard confirmed(sender, title: "삭제") else { return }
         words.clear()
+        nextWords.clear()
         if panel == .words { buildBody() }
     }
 

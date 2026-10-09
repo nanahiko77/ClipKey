@@ -19,6 +19,10 @@
 - `project.yml` XcodeGen 설정. Xcode 프로젝트 파일은 빌드할 때 생성
 - `.github/workflows/build.yml` 서명 없는 ipa를 만드는 GitHub Actions
 
+## 한국어 사전 받기
+키보드 설정 > 정보 > 맞춤법 사전의 [업데이트]를 누르면 GitHub의 `Keyboard/ko_dict.txt`를 받아 바로 쓴다
+(전체 접근 허용 필요). 사전만 고쳤을 때는 ipa를 다시 설치하지 않아도 된다.
+
 ## 한국어 사전 다시 만들기
 `tools/ko_vocab.tsv`나 `make_ko_dict.py`를 고친 뒤 `python3 tools/make_ko_dict.py`를 돌리고 `Keyboard/ko_dict.txt`를 같이 올린다.
 

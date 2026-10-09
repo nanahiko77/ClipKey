@@ -98,18 +98,29 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(langB)
             toolbar.addArrangedSubview(toolButton("123", width: 44, active: panel == .symbols,
                                                   label: "숫자와 기호", action: #selector(numTapped)))
-            toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
-                                                  color: theme.accent, label: "클립보드 열기",
-                                                  action: #selector(clipTapped)))
+            let clipB = toolButton(symbol: "clipboard", width: 40, plain: true,
+                                   color: theme.accent, label: "클립보드 열기", action: #selector(clipTapped))
+            toolbar.addArrangedSubview(clipB)
+            clipToolButton = clipB
             toolbar.addArrangedSubview(suggestScroll)
+            arrowLeftButton = nil
+            arrowRightButton = nil
             if settings.showArrows {
-                toolbar.addArrangedSubview(toolButton(symbol: "chevron.left", width: 36, plain: true,
-                                                      label: "커서 왼쪽으로", action: #selector(cursorLeft)))
-                toolbar.addArrangedSubview(toolButton(symbol: "chevron.right", width: 36, plain: true,
-                                                      label: "커서 오른쪽으로", action: #selector(cursorRight)))
+                let l = toolButton(symbol: "chevron.left", width: 36, plain: true,
+                                   label: "커서 왼쪽으로", action: #selector(cursorLeft))
+                let r = toolButton(symbol: "chevron.right", width: 36, plain: true,
+                                   label: "커서 오른쪽으로", action: #selector(cursorRight))
+                toolbar.addArrangedSubview(l)
+                toolbar.addArrangedSubview(r)
+                arrowLeftButton = l
+                arrowRightButton = r
             }
-            toolbar.addArrangedSubview(toolButton(symbol: "keyboard.down", width: 36, plain: true,
-                                                  label: "키보드 닫기", action: #selector(hideKeyboard)))
+            let hideB = toolButton(symbol: "keyboard.down", width: 36, plain: true,
+                                   label: "키보드 닫기", action: #selector(hideKeyboard))
+            toolbar.addArrangedSubview(hideB)
+            hideToolButton = hideB
+            // 입력 중이면 C안대로 도구를 숨긴 채로 시작한다
+            setToolbarTyping(panel == .keys && !currentWord().isEmpty)
         case .clipboard:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
@@ -146,6 +157,7 @@ extension KeyboardViewController {
 
     func buildBody() {
         keyArea.subviews.forEach { $0.removeFromSuperview() }
+        keyArea.invalidateKeys()
         letterKeys = []
         shiftKey = nil
         undoTimer?.invalidate()
@@ -243,6 +255,14 @@ extension KeyboardViewController {
             // 설정과 상관없이, 전체 삭제가 걸렸다는 것은 진동으로 알린다
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
+        // 왼쪽으로 밀면 단어 단위로 지운다. 더 밀수록 지울 단어가 늘고, 되돌리면 줄어든다. 떼면 지운다.
+        k.swipeStep = 28
+        k.swipeTitle = { n in n > 0 ? "단어 \(n)개 지우기" : "취소" }
+        k.onSwipeChange = { [weak self] n in
+            self?.stopDelete()
+            if n > 0 { self?.haptic() }
+        }
+        k.onSwipeCommit = { [weak self] n in self?.deleteWords(n) }
         return k
     }
 
@@ -297,12 +317,13 @@ extension KeyboardViewController {
 
     /// 영문 쿼티와 한글 두벌식이 같은 배치를 쓴다
     func buildLetters(rows: [String]) {
-        let row1 = hstack(letters(rows[0], "1234567890"))
-        let row2 = hstack(letters(rows[1], "@#$%&-+()"), margin: 19)
+        let on = settings.naraHints        // "보조키 표시" 설정. 모든 자판에 같이 적용된다
+        let row1 = hstack(letters(rows[0], on ? "1234567890" : ""))
+        let row2 = hstack(letters(rows[1], on ? "@#$%&-+()" : ""), margin: 19)
 
         let shiftK = iconKey("shift", id: "shift", label: lang == .english ? "대문자" : "쌍자음", fallback: "⇧")
         shiftKey = shiftK
-        let mid = hstack(letters(rows[2], "*\"':;!?"), margin: 6)
+        let mid = hstack(letters(rows[2], on ? "*\"':;!?" : ""), margin: 6)
         let row3 = hstack([fixed(shiftK, 46), mid, fixed(backspaceKey(), 46)], equal: false)
 
         let row4 = hstack([
