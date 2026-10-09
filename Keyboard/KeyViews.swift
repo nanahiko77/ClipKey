@@ -617,3 +617,47 @@ final class ClipCell: UITableViewCell {
     @objc private func cancelTapped() { onCancel?() }
     @objc private func confirmTapped() { onConfirm?() }
 }
+
+// MARK: - 스크롤 영역
+
+/// 버튼·스위치·구분 선택 위에서 손가락을 대고 밀어도 스크롤되게 한다.
+/// (기본 UIScrollView 는 손가락이 컨트롤 위에서 시작하면 스크롤을 넘겨주지 않아서, 설정처럼 컨트롤이 많은 화면은 잘 안 밀렸다)
+/// 슬라이더는 밀어서 쓰는 컨트롤이라 그대로 둔다.
+private func panelShouldCancel(_ view: UIView) -> Bool {
+    var v: UIView? = view
+    while let cur = v {
+        if cur is UISlider { return false }
+        v = cur.superview
+    }
+    return true
+}
+
+final class PanelScrollView: UIScrollView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        delaysContentTouches = false
+        canCancelContentTouches = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func touchesShouldCancel(in view: UIView) -> Bool { panelShouldCancel(view) }
+}
+
+final class PanelTableView: UITableView {
+    override init(frame: CGRect, style: UITableView.Style) {
+        super.init(frame: frame, style: style)
+        delaysContentTouches = false
+        canCancelContentTouches = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func touchesShouldCancel(in view: UIView) -> Bool { panelShouldCancel(view) }
+}
+
+final class PanelCollectionView: UICollectionView {
+    override init(frame: CGRect, collectionViewLayout layout: UICollectionViewLayout) {
+        super.init(frame: frame, collectionViewLayout: layout)
+        delaysContentTouches = false
+        canCancelContentTouches = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func touchesShouldCancel(in view: UIView) -> Bool { panelShouldCancel(view) }
+}

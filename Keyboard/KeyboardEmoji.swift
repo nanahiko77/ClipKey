@@ -91,7 +91,7 @@ final class GridPanel: NSObject, UICollectionViewDataSource, UICollectionViewDel
         let layout = UICollectionViewFlowLayout()
         layout.minimumInteritemSpacing = 0
         layout.minimumLineSpacing = 0
-        view = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        view = PanelCollectionView(frame: .zero, collectionViewLayout: layout)
         super.init()
         view.backgroundColor = .clear
         view.dataSource = self

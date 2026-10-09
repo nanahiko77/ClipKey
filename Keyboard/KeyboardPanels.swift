@@ -58,7 +58,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
     func buildClipboard() {
         clipItems = clipFilter.map { clipMatches($0) } ?? store.sorted
-        let table = UITableView(frame: .zero, style: .plain)
+        let table = PanelTableView(frame: .zero, style: .plain)
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.rowHeight = 50
@@ -418,7 +418,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             stack.setCustomSpacing(18, after: rows[i - 1])
         }
 
-        let scroll = UIScrollView()
+        let scroll = PanelScrollView(frame: .zero)
         pinEdges(scroll, in: keyArea)
         scroll.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -770,7 +770,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                      in: keyArea, insets: UIEdgeInsets(top: 0, left: 24, bottom: 0, right: 24))
             return
         }
-        let scroll = UIScrollView()
+        let scroll = PanelScrollView(frame: .zero)
         pinEdges(scroll, in: keyArea)
         let full = keyArea.bounds.width > 0 ? keyArea.bounds.width : UIScreen.main.bounds.width
         let left: CGFloat = 8
@@ -898,7 +898,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 /// 상단바 도구를 켜고 끄고, ≡ 를 끌어서 순서를 바꾼다.
 /// 위 묶음: 순서를 바꿀 수 있는 도구. 아래 묶음: 오른쪽 끝에 붙는 화살표와 닫기.
 final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegate {
-    let table = UITableView(frame: .zero, style: .plain)
+    let table = PanelTableView(frame: .zero, style: .plain)
     private let settings: Settings
     private let theme: Theme
     private var order: [String]

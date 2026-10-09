@@ -250,7 +250,7 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(spacer)
             return
         }
-        let scroll = UIScrollView()
+        let scroll = PanelScrollView(frame: .zero)
         scroll.showsHorizontalScrollIndicator = false
         scroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
         scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
