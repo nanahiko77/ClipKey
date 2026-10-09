@@ -141,27 +141,32 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         showToast("사진을 복사했습니다.\n입력창을 길게 눌러 붙여넣으세요.")
     }
 
+    /// 알림 줄 바탕: 라이트는 거의 검정, 다크는 바탕보다 밝은 회색 (글씨는 늘 흰색)
+    var barColor: UIColor { Theme.hex(isDark ? 0x3A3D43 : 0x16181C) }
+    /// 이모지 패널에서는 아래 [가] [간격] [지우기] 줄을 가리지 않게 그 위에 띄운다
+    var barLift: CGFloat { panel == .emoji ? -54 : -6 }
+
     /// 목록 아래에 잠깐 뜨는 안내
     func showToast(_ text: String) {
         undoTimer?.invalidate()
         undoBar?.removeFromSuperview()
-        undoClip = nil
+        undoAction = nil
 
         let bar = UIView()
-        bar.backgroundColor = theme.text
-        bar.layer.cornerRadius = 8
+        bar.backgroundColor = barColor
+        bar.layer.cornerRadius = 10
         bar.translatesAutoresizingMaskIntoConstraints = false
         let label = UILabel()
         label.text = text
         label.numberOfLines = 0
         label.font = .systemFont(ofSize: 14)
-        label.textColor = theme.bg
+        label.textColor = .white
         pinEdges(label, in: bar, insets: UIEdgeInsets(top: 9, left: 14, bottom: 9, right: 14))
         keyArea.addSubview(bar)
         NSLayoutConstraint.activate([
             bar.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor, constant: 6),
             bar.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor, constant: -6),
-            bar.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: -6),
+            bar.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: barLift),
         ])
         undoBar = bar
         undoTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
@@ -173,34 +178,32 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         store.delete(clip.id)
         if freshClip?.id == clip.id { freshClip = nil }
         reloadClips()
-        showUndo(clip)
+        showUndoBar("1개 삭제됨") { [weak self] in
+            self?.store.restore(clip)
+            self?.reloadClips()
+        }
     }
 
-    /// 지운 뒤 몇 초 동안 되돌리기를 보여 준다
-    func showUndo(_ clip: Clip) {
+    /// 지운 뒤 5초 동안 아래 알림 줄에 되돌리기를 보여 준다 (클립보드, 단어 관리, 스티커)
+    func showUndoBar(_ text: String, action: @escaping () -> Void) {
         undoTimer?.invalidate()
         undoBar?.removeFromSuperview()
-        undoClip = clip
+        undoAction = action
 
         let bar = UIView()
-        bar.backgroundColor = theme.text
-        bar.layer.cornerRadius = 8
+        bar.backgroundColor = barColor
+        bar.layer.cornerRadius = 10
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         let label = UILabel()
-        label.text = "1개 삭제됨"
+        label.text = text
         label.font = .systemFont(ofSize: 14)
-        label.textColor = theme.bg
+        label.textColor = .white
+        label.lineBreakMode = .byTruncatingTail
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let undo = UIButton(type: .system)
-        undo.setTitle("되돌리기", for: .normal)
-        undo.titleLabel?.font = .boldSystemFont(ofSize: 14)
-        undo.setTitleColor(theme.text, for: .normal)
-        undo.backgroundColor = theme.funcKey
-        undo.layer.cornerRadius = 8
-        undo.contentEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
-        undo.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        let undo = undoChip("되돌리기", onBar: true)
         undo.addTarget(self, action: #selector(undoTapped), for: .touchUpInside)
 
         let stack = UIStackView(arrangedSubviews: [label, undo])
@@ -213,21 +216,22 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         NSLayoutConstraint.activate([
             bar.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor, constant: 6),
             bar.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor, constant: -6),
-            bar.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: -6),
-            bar.heightAnchor.constraint(equalToConstant: 42),
+            bar.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: barLift),
+            bar.heightAnchor.constraint(equalToConstant: 44),
         ])
         undoBar = bar
-        undoTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
+        undoTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
             self?.undoBar?.removeFromSuperview()
-            self?.undoClip = nil
+            self?.undoAction = nil
         }
     }
 
     @objc func undoTapped() {
         undoTimer?.invalidate()
-        if let clip = undoClip { store.restore(clip) }
-        undoClip = nil
-        reloadClips()
+        undoBar?.removeFromSuperview()
+        let action = undoAction
+        undoAction = nil
+        action?()
     }
 
     @objc func clearClipsTapped(_ sender: UIButton) {
@@ -278,7 +282,13 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
         let close = toolButton("닫기", action: #selector(closePreview))
         let paste = toolButton(pasteTitle, active: true, action: #selector(pastePreview))
-        let buttons = hstack([close, paste], spacing: 6)
+        var row: [UIView] = [close]
+        if clip.image != nil {
+            // 사진은 스티커 팩에 넣을 수 있다
+            row.append(toolButton("스티커로", symbol: "smile", action: #selector(previewToSticker)))
+        }
+        row.append(paste)
+        let buttons = hstack(row, spacing: 6)
 
         let stack = UIStackView(arrangedSubviews: [content, buttons])
         stack.axis = .vertical
@@ -291,6 +301,12 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     @objc func closePreview() {
         previewView?.removeFromSuperview()
         previewClip = nil
+    }
+
+    @objc func previewToSticker() {
+        guard let clip = previewClip else { return }
+        closePreview()
+        showStickerPicker(preselect: clip.id)
     }
 
     @objc func pastePreview() {
@@ -848,8 +864,13 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
     @objc func wordDeleteTapped(_ sender: UIButton) {
         guard sender.tag < wordList.count else { return }
-        words.remove(wordList[sender.tag])
+        let w = wordList[sender.tag]
+        let count = words.remove(w)
         buildBody()
+        showUndoBar("‘\(w)’ 삭제됨") { [weak self] in
+            self?.words.restore(w, count: count ?? WordStore.threshold)
+            self?.buildBody()
+        }
     }
 }
 
@@ -869,7 +890,7 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         "clipboard": "클립보드", "settings": "설정", "addword": "단어 추가", "emoji": "이모지",
         "arrows": "커서 좌우 화살표", "hide": "키보드 닫기",
     ]
-    static let notes: [String: String] = ["addword": "치던 말을 바로 등록", "emoji": "준비 중 · 다음 단계에서 만듦"]
+    static let notes: [String: String] = ["addword": "치던 말을 바로 등록", "emoji": "이모지와 내 스티커"]
     static let icons: [String: String] = [
         "clipboard": "clipboard", "settings": "slider.horizontal.3", "addword": "plus", "emoji": "smile",
         "arrows": "chevron.right", "hide": "keyboard.down",
@@ -957,7 +978,7 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         lang.heightAnchor.constraint(equalToConstant: 30).isActive = true
         preview.addArrangedSubview(lang)
         let off = settings.toolbarOff
-        for item in order where !off.contains(item) && item != "emoji" {
+        for item in order where !off.contains(item) {
             preview.addArrangedSubview(previewIcon(ToolbarEditList.icons[item] ?? "plus"))
         }
         let spacer = UIView()
@@ -1002,8 +1023,7 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         cell.imageView?.image = Icon.image(ToolbarEditList.icons[item] ?? "plus", size: 18, line: 1.75)
         cell.imageView?.tintColor = theme.text
         let sw = UISwitch()
-        sw.isOn = item == "emoji" ? false : isOn(item)
-        sw.isEnabled = item != "emoji"
+        sw.isOn = isOn(item)
         sw.accessibilityLabel = ToolbarEditList.names[item]
         sw.tag = indexPath.section * 100 + indexPath.row
         sw.addTarget(self, action: #selector(switchChanged(_:)), for: .valueChanged)

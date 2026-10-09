@@ -12,6 +12,29 @@ final class Settings {
     private init() {
         d.register(defaults: ["naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
                               "showHide": true, "repeatOnHold": true, "repeatSpeed": 5, "longPressTime": 0.35])
+        // 이모지 패널이 생겼다: 예전에 "준비 중"이라 꺼져 있던 이모지를 한 번만 켠다
+        if !d.bool(forKey: "emojiReady") {
+            d.set(true, forKey: "emojiReady")
+            if var off = d.stringArray(forKey: "toolbarOff") {
+                off.removeAll { $0 == "emoji" }
+                d.set(off, forKey: "toolbarOff")
+            }
+        }
+    }
+
+    // MARK: 이모지
+
+    /// 최근에 쓴 이모지 (앞이 가장 최근). 자주 쓰는 칸에 그대로 보인다.
+    var recentEmoji: [String] {
+        get { d.stringArray(forKey: "recentEmoji") ?? [] }
+        set { d.set(Array(newValue.prefix(32)), forKey: "recentEmoji") }
+    }
+
+    func useEmoji(_ e: String) {
+        var r = recentEmoji
+        r.removeAll { $0 == e }
+        r.insert(e, at: 0)
+        recentEmoji = r
     }
 
     // MARK: 입력
@@ -41,7 +64,7 @@ final class Settings {
 
     /// 순서를 바꿀 수 있는 도구. 한/영은 항상 맨 앞, 화살표와 닫기는 항상 맨 뒤.
     static let toolbarItemsAll = ["clipboard", "settings", "addword", "emoji"]
-    static let toolbarOffDefault = ["emoji"]
+    static let toolbarOffDefault: [String] = []
 
     var toolbarOrder: [String] {
         get {
@@ -498,8 +521,19 @@ final class WordStore {
         list.filter { $0 != query && HangulComposer.matches(query: query, word: $0) }
     }
 
-    func remove(_ w: String) {
+    /// 지우고, 되돌릴 수 있도록 지우기 전 횟수를 돌려준다
+    @discardableResult
+    func remove(_ w: String) -> Int? {
+        let old = counts[w]
         counts[w] = nil
+        cachedList = nil
+        save()
+        return old
+    }
+
+    /// 지운 단어를 되돌린다
+    func restore(_ w: String, count: Int) {
+        counts[w] = max(counts[w] ?? 0, count)
         cachedList = nil
         save()
     }
@@ -564,12 +598,28 @@ final class NextWordStore {
             .prefix(limit).map { $0.key }
     }
 
-    func remove(_ word: String) {
+    /// 지우고, 되돌릴 수 있도록 지운 짝을 돌려준다
+    @discardableResult
+    func remove(_ word: String) -> [String: [String: Int]] {
+        var removed: [String: [String: Int]] = [:]
         for key in Array(pairs.keys) {
+            if let c = pairs[key]?[word] { removed[key, default: [:]][word] = c }
             pairs[key]?[word] = nil
             if pairs[key]?.isEmpty == true { pairs[key] = nil }
         }
+        if let own = pairs[word] {
+            for (k, v) in own { removed[word, default: [:]][k] = v }
+        }
         pairs[word] = nil
+        total = pairs.values.reduce(0) { $0 + $1.count }
+        saver.schedule()
+        return removed
+    }
+
+    func restore(_ removed: [String: [String: Int]]) {
+        for (prev, nexts) in removed {
+            for (next, c) in nexts { pairs[prev, default: [:]][next] = c }
+        }
         total = pairs.values.reduce(0) { $0 + $1.count }
         saver.schedule()
     }
@@ -593,6 +643,100 @@ final class NextWordStore {
 
     private func writeNow() {
         guard let data = try? JSONEncoder().encode(pairs) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+// MARK: - 스티커
+
+/// 내가 만든 스티커 팩. 클립보드에 저장된 사진을 골라 팩에 넣는다. 키보드 안에만 저장한다.
+struct StickerPack: Codable, Equatable {
+    var id: UUID
+    var name: String
+    var items: [String]          // 파일 이름 (stickers 폴더)
+}
+
+final class StickerStore {
+    private(set) var packs: [StickerPack] = []
+    private let url: URL
+    let dir: URL
+
+    init() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        dir = base.appendingPathComponent("stickers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        url = base.appendingPathComponent("stickers.json")
+        if let data = try? Data(contentsOf: url),
+           let saved = try? JSONDecoder().decode([StickerPack].self, from: data) {
+            packs = saved
+        }
+    }
+
+    func fileURL(_ name: String) -> URL { dir.appendingPathComponent(name) }
+    func thumbURL(_ name: String) -> URL { dir.appendingPathComponent("t_" + name) }
+
+    /// 새 팩. 이름은 "팩 1", "팩 2" 처럼 붙인다.
+    @discardableResult
+    func newPack() -> StickerPack {
+        var n = packs.count + 1
+        while packs.contains(where: { $0.name == "팩 \(n)" }) { n += 1 }
+        let p = StickerPack(id: UUID(), name: "팩 \(n)", items: [])
+        packs.append(p)
+        save()
+        return p
+    }
+
+    /// 사진 파일을 복사해 팩에 넣는다. 넣은 개수를 돌려준다.
+    @discardableResult
+    func add(images: [URL], to packID: UUID) -> Int {
+        guard let i = packs.firstIndex(where: { $0.id == packID }) else { return 0 }
+        var added = 0
+        for src in images {
+            guard let data = try? Data(contentsOf: src) else { continue }
+            let name = UUID().uuidString + ".jpg"
+            do { try data.write(to: fileURL(name), options: .atomic) } catch { continue }
+            if let small = ClipStore.downsample(data, maxPixel: 200), let t = small.jpegData(compressionQuality: 0.75) {
+                try? t.write(to: thumbURL(name), options: .atomic)
+            }
+            packs[i].items.append(name)
+            added += 1
+        }
+        save()
+        return added
+    }
+
+    /// 스티커 하나를 뺀다. 되돌리기를 위해 파일은 남겨 두고, 다음에 정리한다.
+    func remove(_ name: String) -> (pack: UUID, index: Int)? {
+        for i in packs.indices {
+            if let j = packs[i].items.firstIndex(of: name) {
+                packs[i].items.remove(at: j)
+                save()
+                return (packs[i].id, j)
+            }
+        }
+        return nil
+    }
+
+    func restore(_ name: String, pack: UUID, index: Int) {
+        guard let i = packs.firstIndex(where: { $0.id == pack }) else { return }
+        packs[i].items.insert(name, at: min(index, packs[i].items.count))
+        save()
+    }
+
+    /// 빈 팩과 어디에도 속하지 않는 파일을 정리한다
+    func cleanUp() {
+        packs.removeAll { $0.items.isEmpty }
+        save()
+        var keep = Set<String>()
+        for p in packs { for n in p.items { keep.insert(n); keep.insert("t_" + n) } }
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        for f in files where !keep.contains(f) {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent(f))
+        }
+    }
+
+    private func save() {
+        guard let data = try? JSONEncoder().encode(packs) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }

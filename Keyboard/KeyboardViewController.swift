@@ -1,12 +1,15 @@
 import UIKit
 import AudioToolbox
 
-enum SuggestKind { case correction, original, learned, pinned, dict, next }
+enum SuggestKind { case correction, original, learned, pinned, dict, next, replacement, email }
+
+/// 앱이 알려 주는 입력 칸 종류. 칸에 맞춰 자판을 바꾼다.
+enum FieldKind { case normal, number, email, url }
 
 /// 키보드 본체: 상태, 입력 처리, 추천 단어.
 /// 자판 배치는 KeyboardLayouts.swift, 패널은 KeyboardPanels.swift 에 있다.
 final class KeyboardViewController: UIInputViewController {
-    enum Panel { case keys, symbols, clipboard, settings, words, toolbarEdit }
+    enum Panel { case keys, symbols, numpad, emoji, clipboard, settings, words, toolbarEdit }
     enum Lang { case hangul, english }
     enum Shift { case off, once, locked }
 
@@ -20,6 +23,41 @@ final class KeyboardViewController: UIInputViewController {
     let nextWords = NextWordStore()
     let settings = Settings.shared
     let checker = UITextChecker()
+    let stickers = StickerStore()
+    /// 아이폰 설정 > 일반 > 키보드 > 텍스트 대치 (줄임말 → 바꿀 글)
+    var textReplacements: [String: String] = [:]
+
+    // 입력 칸 종류
+    var fieldKind: FieldKind = .normal
+    var fieldSignature = ""
+    /// 줄바꿈 키 이름 (검색, 이동, 보내기 …). nil 이면 줄바꿈 모양.
+    var returnTitle: String?
+    var langBeforeField: Lang?
+
+    // 추천 줄의 알림 + 되돌리기 (전체 삭제, 단어 밀어 지우기, 추천에서 빼기)
+    var notice: (text: String, action: () -> Void)?
+    var noticeTimer: Timer?
+    // 클립보드·단어 관리 아래 알림 줄의 되돌리기
+    var undoAction: (() -> Void)?
+    var deletedAllText = ""
+
+    // 간격 키로 커서 옮기는 중
+    var cursorDragging = false
+    weak var spaceKeyRef: KeyButton?
+    lazy var selectionFeedback = UISelectionFeedbackGenerator()
+
+    // 이모지 패널
+    var emojiTab = 0                   // 0 이모지, 1 스티커
+    var emojiCategory = 0              // 0 자주 쓰는
+    var stickerPack = 0
+    var emojiGrid: GridPanel?
+    var pickerGrid: GridPanel?
+    var pickerClips: [Clip] = []
+    var pickerPack: UUID?
+    weak var pickerAddButton: UIButton?
+    weak var pickerView: UIView?
+    /// 추천 줄 자리에 대신 올리는 것 (단어 추가 입력 칸, 이모지 패널 탭)
+    let barOverlay = UIView()
     lazy var koLanguage: String? = UITextChecker.availableLanguages.first { $0.hasPrefix("ko") }
 
     var theme = Theme.light
@@ -98,7 +136,6 @@ final class KeyboardViewController: UIInputViewController {
     var clipItems: [Clip] = []
     var confirmingID: UUID?
     weak var clipTable: UITableView?
-    var undoClip: Clip?
     weak var undoBar: UIView?
     var undoTimer: Timer?
     var armedButton: UIButton?
@@ -174,8 +211,94 @@ final class KeyboardViewController: UIInputViewController {
             keyArea.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+        barOverlay.isHidden = true
+        pinEdges(barOverlay, in: suggestBar)
+
         KoDictionary.shared.preload()
+        loadTextReplacements()
+        _ = checkField()
         rebuild()
+    }
+
+    /// 아이폰 텍스트 대치 목록을 받아 둔다 (연락처 이름처럼 그대로인 항목은 뺀다)
+    func loadTextReplacements() {
+        requestSupplementaryLexicon { [weak self] lexicon in
+            var map: [String: String] = [:]
+            for e in lexicon.entries where e.userInput != e.documentText && !e.userInput.isEmpty {
+                map[e.userInput] = e.documentText
+                let lower = e.userInput.lowercased()
+                if map[lower] == nil { map[lower] = e.documentText }
+            }
+            DispatchQueue.main.async {
+                self?.textReplacements = map
+                self?.lastSuggestSignature = nil
+            }
+        }
+    }
+
+    /// 텍스트 대치에 있는 줄임말이면 바꿀 글
+    func replacement(for word: String) -> String? {
+        guard !adding, !word.isEmpty, fieldKind == .normal else { return nil }
+        return textReplacements[word] ?? textReplacements[word.lowercased()]
+    }
+
+    // MARK: - 입력 칸 종류
+
+    func currentFieldKind() -> FieldKind {
+        switch textDocumentProxy.keyboardType ?? .default {
+        case .numberPad, .phonePad, .decimalPad, .asciiCapableNumberPad: return .number
+        case .emailAddress: return .email
+        case .URL: return .url
+        default: return .normal
+        }
+    }
+
+    func currentReturnTitle() -> String? {
+        switch textDocumentProxy.returnKeyType ?? .default {
+        case .go: return "이동"
+        case .google, .yahoo, .search: return "검색"
+        case .send: return "보내기"
+        case .next: return "다음"
+        case .done: return "완료"
+        case .join: return "참가"
+        case .route: return "경로"
+        case .continue: return "계속"
+        case .emergencyCall: return "긴급"
+        default: return nil
+        }
+    }
+
+    /// 입력 칸이 바뀌었으면 자판을 맞추고 true (다시 그려야 함)
+    func checkField() -> Bool {
+        let kind = currentFieldKind()
+        let title = currentReturnTitle()
+        let sig = "\(kind)|\(title ?? "")"
+        guard sig != fieldSignature else { return false }
+        let kindChanged = kind != fieldKind || fieldSignature.isEmpty
+        fieldSignature = sig
+        fieldKind = kind
+        returnTitle = title
+        guard kindChanged, !adding else { return true }
+        let typingPanel = panel == .keys || panel == .symbols || panel == .numpad
+        switch kind {
+        case .number:
+            if typingPanel { resetComposer(); panel = .numpad }
+        case .email, .url:
+            if typingPanel {
+                resetComposer()
+                if langBeforeField == nil { langBeforeField = lang }
+                lang = .english
+                panel = .keys
+            }
+        case .normal:
+            if panel == .numpad { panel = .keys }
+            if let l = langBeforeField {
+                lang = l
+                langBeforeField = nil
+            }
+        }
+        shift = .off
+        return true
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -183,6 +306,7 @@ final class KeyboardViewController: UIInputViewController {
         capture()
         // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
         resolveTheme()
+        _ = checkField()
         if layoutSignature() != builtSignature {
             rebuild()
         } else {
@@ -204,6 +328,8 @@ final class KeyboardViewController: UIInputViewController {
         stopDelete()
         resetComposer()
         addBuffer = nil
+        cursorDragging = false
+        notice = nil
         words.flush()
         nextWords.flush()
     }
@@ -212,7 +338,8 @@ final class KeyboardViewController: UIInputViewController {
         super.textDidChange(textInput)
         let was = isDark
         resolveTheme()
-        if was != isDark {
+        let fieldChanged = checkField()
+        if was != isDark || fieldChanged {
             rebuild()
         } else {
             refreshSuggestions()
@@ -238,10 +365,19 @@ final class KeyboardViewController: UIInputViewController {
         disarm()
         view.backgroundColor = theme.bg
         divider.backgroundColor = theme.divider
-        // 추천 줄은 글자 자판과 숫자 화면에서만 (다른 패널은 그만큼 넓게 쓴다)
-        let showBar = (panel == .keys || panel == .symbols) && !adding
+        // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
+        // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
+        let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
         suggestBar.isHidden = !showBar
         suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
+        barOverlay.subviews.forEach { $0.removeFromSuperview() }
+        barOverlay.isHidden = true
+        suggestScroll.isHidden = false
+        if adding && (panel == .keys || panel == .symbols) {
+            buildAddRow()
+        } else if panel == .emoji {
+            buildEmojiTabs()
+        }
         buildToolbar()
         buildBody()
         lastSuggestSignature = nil
@@ -250,7 +386,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
@@ -413,6 +549,7 @@ final class KeyboardViewController: UIInputViewController {
     func handleKey(_ id: String) {
         syncComposer()
         armedSuggestion = nil
+        notice = nil
         let now = Date()
         let gap = now.timeIntervalSince(lastKeyTime)
         let sameKey = id == lastKeyID
@@ -423,7 +560,15 @@ final class KeyboardViewController: UIInputViewController {
         case "space":
             commitWord(separator: " ")
         case "return":
-            commitWord(separator: "\n")
+            if panel == .numpad, returnTitle == nil {
+                hideKeyboard()             // 숫자 칸의 "완료"
+            } else {
+                commitWord(separator: "\n")
+            }
+        case "tokeys":
+            resetComposer()
+            panel = .keys
+            rebuild()
         case "shift":
             toggleShift(doubleTap: sameKey && gap < 0.4)
         case "punct":
@@ -432,7 +577,7 @@ final class KeyboardViewController: UIInputViewController {
                 punctIndex = (punctIndex + 1) % KeyboardViewController.puncts.count
             } else {
                 resetComposer()
-                if !adding { words.learn(currentWord()) }
+                learn(currentWord())
                 punctIndex = 0
             }
             docInsert(KeyboardViewController.puncts[punctIndex])
@@ -470,11 +615,17 @@ final class KeyboardViewController: UIInputViewController {
         refreshSuggestions()
     }
 
+    /// 단어를 배운다. 단어 추가 중이거나 이메일·주소·숫자 칸에서는 배우지 않는다.
+    func learn(_ w: String) {
+        guard !adding, fieldKind == .normal else { return }
+        words.learn(w)
+    }
+
     /// 조합과 상관없는 글자(숫자, 기호)를 넣는다
     func plain(_ s: String) {
         resetComposer()
         if let f = s.first, !f.isLetter, !f.isNumber {
-            if !adding { words.learn(currentWord()) }
+            learn(currentWord())
         }
         docInsert(s)
     }
@@ -482,6 +633,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 꾹 눌러서 나온 보조 글자
     func insertPlain(_ s: String) {
         syncComposer()
+        notice = nil
         plain(s)
         lastKeyID = s
         lastKeyTime = Date()
@@ -554,13 +706,18 @@ final class KeyboardViewController: UIInputViewController {
         let word = currentWord()
         let previous = previousWord(in: String((docBefore ?? "").dropLast(word.count)))
         var final = word
-        if separator == " ", settings.correctMode == 2, let fix = autoCorrection(for: word) {
+        if separator == " ", let rep = replacement(for: word) {
+            // 아이폰 텍스트 대치: 교정 설정과 상관없이 바꾼다. 지우기 한 번이면 되돌린다.
+            replaceWord(word, with: rep)
+            final = rep
+            lastCorrection = (word, rep, separator)
+        } else if separator == " ", settings.correctMode == 2, let fix = autoCorrection(for: word) {
             replaceWord(word, with: fix)
             final = fix
             lastCorrection = (word, fix, separator)
         }
-        words.learn(final)
-        if separator == " ", let p = previous { nextWords.learn(previous: p, next: final) }
+        learn(final)
+        if separator == " ", fieldKind == .normal, let p = previous { nextWords.learn(previous: p, next: final) }
         docInsert(separator)
         autoCapIfNeeded()
     }
@@ -568,7 +725,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 고칠 후보 (한글·영문). 앞이 가장 그럴듯한 것. 교정을 껐거나 고칠 것이 없으면 빈 배열.
     /// 학습한 단어와 직접 넣은 단어(이름, 회사명 등)는 고치지 않는다.
     func corrections(for word: String) -> [String] {
-        guard settings.correctMode > 0, panel == .keys, !adding, word != skipCorrection else { return [] }
+        guard settings.correctMode > 0, panel == .keys, !adding, fieldKind == .normal, word != skipCorrection else { return [] }
         if lang == .english { return correction(for: word).map { [$0] } ?? [] }
         return koCandidates(word).map { $0.text }
     }
@@ -582,7 +739,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 간격을 눌렀을 때 자동으로 바꿀 단어. 한글은 확실한 후보만 바꾸고, 나머지는 추천 칸에만 보여 준다.
     func autoCorrection(for word: String) -> String? {
-        guard settings.correctMode == 2, panel == .keys, !adding, word != skipCorrection else { return nil }
+        guard settings.correctMode == 2, panel == .keys, !adding, fieldKind == .normal, word != skipCorrection else { return nil }
         // 내가 쓰는 말(직접 넣은 단어, 자주 친 단어)을 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
         if !words.matches(word).isEmpty { return nil }
         if lang == .english { return correction(for: word) }
@@ -642,7 +799,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func autoCapIfNeeded() {
-        guard !adding, settings.autoCap, lang == .english, panel == .keys, shift == .off else { return }
+        guard !adding, settings.autoCap, fieldKind == .normal, lang == .english, panel == .keys, shift == .off else { return }
         let ctx = docBefore ?? ""
         let trimmed = ctx.trimmingCharacters(in: .whitespaces)
         let startOfSentence = trimmed.isEmpty || trimmed.hasSuffix(".") || trimmed.hasSuffix("!")
@@ -702,8 +859,15 @@ final class KeyboardViewController: UIInputViewController {
             if i == end, i > 0 { i -= 1 }      // 단어가 아니면 문장부호 하나
             if i == 0 { break }
         }
+        let removed = String(ctx[i...])
         for _ in 0..<(ctx.count - i) { docDelete() }
         lastKeyID = "⌫"
+        if !removed.isEmpty, !adding {
+            showNotice("단어 \(n)개 지웠어요") { [weak self] in
+                self?.resetComposer()
+                self?.docInsert(removed)
+            }
+        }
         refreshSuggestions()
     }
 
@@ -721,6 +885,7 @@ final class KeyboardViewController: UIInputViewController {
             updateAddField()
             return
         }
+        deletedAllText = ""
         if let after = textDocumentProxy.documentContextAfterInput, !after.isEmpty {
             textDocumentProxy.adjustTextPosition(byCharacterOffset: after.count)
         }
@@ -733,9 +898,18 @@ final class KeyboardViewController: UIInputViewController {
     func deleteAllPass(_ pass: Int) {
         guard pass < 40, let before = docBefore, !before.isEmpty else {
             lastKeyID = "⌫"
+            let text = deletedAllText
+            deletedAllText = ""
+            if !text.isEmpty {
+                showNotice("\(text.count)자를 모두 지웠어요") { [weak self] in
+                    self?.resetComposer()
+                    self?.docInsert(text)
+                }
+            }
             refreshSuggestions()
             return
         }
+        deletedAllText = before + deletedAllText
         for _ in 0..<before.count { docDelete() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             self?.deleteAllPass(pass + 1)
@@ -746,7 +920,7 @@ final class KeyboardViewController: UIInputViewController {
 
     @objc func langTapped() {
         resetComposer()
-        if panel == .symbols {
+        if panel == .symbols || panel == .numpad {
             panel = .keys
         } else {
             lang = lang == .hangul ? .english : .hangul
@@ -788,6 +962,12 @@ final class KeyboardViewController: UIInputViewController {
         panel = .keys
         rebuild()
         autoCapIfNeeded()
+    }
+
+    @objc func openEmoji() {
+        resetComposer()
+        panel = .emoji
+        rebuild()
     }
 
     @objc func openSettings() {
@@ -840,6 +1020,7 @@ final class KeyboardViewController: UIInputViewController {
             guard items.count < 6, t != word, !items.contains(where: { $0.text == t }) else { return }
             items.append((t, k))
         }
+        if fieldKind == .email { return emailItems() }
         if word.isEmpty {
             // 간격을 누른 뒤: 앞 단어 다음에 평소 이어 쓰던 단어
             if panel == .keys, let prev = previousWord(in: docBefore ?? "") {
@@ -849,10 +1030,13 @@ final class KeyboardViewController: UIInputViewController {
         }
         // 순서: 직접 넣은 단어 → 자주 친 단어 → 맞춤법(교정, 사전) → 고정한 클립
         // 내가 쓰는 말(이름 등)은 사전 추천보다 늘 앞에 둔다. 초성 하나(ㅇ)나 첫 글자(유)만 쳐도 맞춘다.
+        // 아이폰 텍스트 대치가 맨 앞 (간격을 누르면 바뀐다)
+        let rep = replacement(for: word)
+        if let r = rep { add(r, .replacement) }
         let matched = words.matches(word)
         for w in matched where words.isManual(w) { add(w, .learned) }
         for w in matched where !words.isManual(w) { add(w, .learned) }
-        let fixes = corrections(for: word)
+        let fixes = rep == nil ? corrections(for: word) : []
         if let first = fixes.first {
             if autoCorrection(for: word) == first {
                 // 간격을 누르면 바뀌는 경우에만 강조하고, 왼쪽에 "친 그대로"를 둔다
@@ -883,6 +1067,80 @@ final class KeyboardViewController: UIInputViewController {
         return items
     }
 
+    static let emailDomains = ["naver.com", "gmail.com", "icloud.com", "daum.net", "hanmail.net", "kakao.com",
+                               "nate.com", "outlook.com", "hotmail.com", "yahoo.com"]
+
+    /// 이메일 칸: @ 앞을 치는 중이면 "@naver.com" 같은 주소 끝, @ 뒤를 치는 중이면 맞는 주소
+    func emailItems() -> [(text: String, kind: SuggestKind)] {
+        let ctx = docBefore ?? ""
+        let token = String(ctx.reversed().prefix { !$0.isWhitespace }.reversed())
+        guard !token.isEmpty else { return [] }
+        if let at = token.lastIndex(of: "@") {
+            let part = String(token[token.index(after: at)...]).lowercased()
+            return KeyboardViewController.emailDomains
+                .filter { $0.hasPrefix(part) && $0 != part }
+                .prefix(3).map { (text: $0, kind: SuggestKind.email) }
+        }
+        return ["@gmail.com", "@naver.com", "@icloud.com"].map { (text: $0, kind: SuggestKind.email) }
+    }
+
+    /// 이메일 칸에서 @ 뒤에 친 글자
+    func emailDomainPart() -> String {
+        let ctx = docBefore ?? ""
+        let token = String(ctx.reversed().prefix { !$0.isWhitespace }.reversed())
+        guard let at = token.lastIndex(of: "@") else { return "" }
+        return String(token[token.index(after: at)...])
+    }
+
+    // MARK: - 추천 줄 알림 (되돌리기)
+
+    /// 추천 줄에 "…지웠어요 [↺ 되돌리기]"를 5초 동안 보여 준다. 글자를 치면 사라진다.
+    func showNotice(_ text: String, action: @escaping () -> Void) {
+        notice = (text, action)
+        noticeTimer?.invalidate()
+        noticeTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+            self?.clearNotice()
+        }
+        lastSuggestSignature = nil
+        refreshSuggestions()
+    }
+
+    func clearNotice() {
+        noticeTimer?.invalidate()
+        noticeTimer = nil
+        guard notice != nil else { return }
+        notice = nil
+        lastSuggestSignature = nil
+        refreshSuggestions()
+    }
+
+    @objc func noticeTapped() {
+        let action = notice?.action
+        clearNotice()
+        stopDelete()
+        action?()
+        lastKeyID = "undo"
+        refreshSuggestions()
+    }
+
+    /// 되돌리기 칩. 어디서나 같은 모양: ↺ 아이콘 + 둥근 칩. 자판 위에서는 흰 칩, 어두운 알림 줄 위에서는 진회색 칩.
+    func undoChip(_ title: String, bold: Bool = true, onBar: Bool = false) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setImage(Icon.image("undo", size: 15, line: 2.2), for: .normal)
+        b.setTitle(" " + title, for: .normal)
+        b.titleLabel?.font = bold ? .boldSystemFont(ofSize: 14) : .systemFont(ofSize: 14)
+        let fg: UIColor = onBar ? .white : theme.text
+        b.tintColor = fg
+        b.setTitleColor(fg, for: .normal)
+        b.backgroundColor = onBar ? Theme.hex(isDark ? 0x5A5E66 : 0x4A4D54) : theme.key
+        b.layer.cornerRadius = 15
+        b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 12)
+        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        b.setContentHuggingPriority(.required, for: .horizontal)
+        b.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return b
+    }
+
     /// 상단바 C안: 글자를 치는 중에는 한/영, 123 만 남기고 나머지 자리를 추천 단어에 준다
     /// B안부터는 치는 중에도 도구를 숨기지 않는다 (추천은 따로 한 줄을 쓴다)
     func setToolbarTyping(_ typing: Bool) {
@@ -890,7 +1148,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func renderSuggestions() {
-        guard !adding, panel == .keys || panel == .symbols else { return }
+        guard !adding, panel == .keys || panel == .symbols || panel == .numpad else { return }
+        if cursorDragging || notice != nil {
+            renderMessageRow()
+            return
+        }
         let word = currentWord()
         let typing = panel == .keys && !word.isEmpty
         let items = suggestionItems(for: word)
@@ -909,9 +1171,11 @@ final class KeyboardViewController: UIInputViewController {
 
         if let undo = undo {
             // 방금 자동으로 고쳤으면 되돌리기 칩을 먼저 보여 준다
-            let chip = clipChip(nil, undo: undo)
+            let chip = undoChip(undo, bold: false)
+            chip.accessibilityLabel = undo + "로 되돌리기"
+            chip.addTarget(self, action: #selector(undoChipTapped), for: .touchUpInside)
             suggestStack.addArrangedSubview(chip)
-            suggestStack.setCustomSpacing(4, after: chip)
+            suggestStack.setCustomSpacing(6, after: chip)
         }
         if let clip = clip {
             let chip = clipChip(clip)
@@ -935,6 +1199,57 @@ final class KeyboardViewController: UIInputViewController {
         suggestScroll.setContentOffset(.zero, animated: false)
     }
 
+    /// 추천 줄 한가운데에 안내 한 줄: 커서 옮기는 중, 또는 "…지웠어요 [되돌리기]"
+    func renderMessageRow() {
+        let signature = cursorDragging ? "cursor|\(isDark)" : "notice|\(notice?.text ?? "")|\(isDark)"
+        if signature == lastSuggestSignature { return }
+        lastSuggestSignature = signature
+        suggestStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        suggestItems = []
+
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 10
+        let holder = UIView()
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        holder.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        // 너비는 화면에 붙인 뒤에 건다 (먼저 걸면 키보드가 종료된다)
+        suggestStack.addArrangedSubview(holder)
+        holder.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor).isActive = true
+        row.translatesAutoresizingMaskIntoConstraints = false
+        holder.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
+            row.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
+            row.leadingAnchor.constraint(greaterThanOrEqualTo: holder.leadingAnchor),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor),
+        ])
+
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = theme.muted
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if cursorDragging {
+            let l = UIImageView(image: Icon.image("chevron.left", size: 16, line: 2))
+            let r = UIImageView(image: Icon.image("chevron.right", size: 16, line: 2))
+            l.tintColor = theme.muted
+            r.tintColor = theme.muted
+            label.text = "커서 이동 중 · 손을 떼면 멈춤"
+            row.addArrangedSubview(l)
+            row.addArrangedSubview(label)
+            row.addArrangedSubview(r)
+        } else if let n = notice {
+            label.text = n.text
+            row.addArrangedSubview(label)
+            let chip = undoChip("되돌리기")
+            chip.addTarget(self, action: #selector(noticeTapped), for: .touchUpInside)
+            row.addArrangedSubview(chip)
+        }
+        suggestScroll.setContentOffset(.zero, animated: false)
+    }
+
     func separatorLine(height: CGFloat) -> UIView {
         let line = UIView()
         line.backgroundColor = theme.divider
@@ -952,10 +1267,11 @@ final class KeyboardViewController: UIInputViewController {
             left = o
             rest.removeAll { $0 == o }
         }
-        // 가운데: 직접 넣은 단어 → 자주 친 단어 → 고친 단어 → 첫째 순서
+        // 가운데: 텍스트 대치 → 직접 넣은 단어 → 자주 친 단어 → 고친 단어 → 첫째 순서
+        let replaced = rest.first { items[$0].kind == .replacement }
         let manual = rest.first { items[$0].kind == .learned && words.isManual(items[$0].text) }
         let learned = rest.first { items[$0].kind == .learned }
-        let center = manual ?? learned ?? rest.first { items[$0].kind == .correction } ?? rest.first
+        let center = replaced ?? manual ?? learned ?? rest.first { items[$0].kind == .correction } ?? rest.first
         if let c = center { rest.removeAll { $0 == c } }
         if left == nil, !rest.isEmpty { left = rest.removeFirst() }
         let right = rest.isEmpty ? nil : rest.removeFirst()
@@ -1013,11 +1329,20 @@ final class KeyboardViewController: UIInputViewController {
             b.titleLabel?.minimumScaleFactor = 0.75
             b.tintColor = armed ? theme.onDanger : theme.muted
             b.setTitleColor(armed ? theme.onDanger : theme.text, for: .normal)
-            // 고친 단어는 회색 바탕으로 강조한다: 간격을 누르면 이것으로 바뀐다
-            b.backgroundColor = armed ? theme.danger : (item.kind == .correction ? theme.funcKey : .clear)
+            // 고친 단어·대치는 회색 바탕으로 강조한다: 간격을 누르면 이것으로 바뀐다
+            let willApply = item.kind == .correction || item.kind == .replacement
+            b.backgroundColor = armed ? theme.danger : (willApply ? theme.funcKey : .clear)
             b.layer.cornerRadius = 8
-            if item.kind == .correction {
+            if willApply {
                 b.accessibilityLabel = item.text + ", 간격을 누르면 이것으로 바뀜"
+            }
+            if item.kind == .replacement {
+                // 텍스트 대치는 작은 "대치" 표시를 붙인다
+                let s = NSMutableAttributedString(string: title, attributes: [
+                    .font: UIFont.boldSystemFont(ofSize: 16), .foregroundColor: theme.text])
+                s.append(NSAttributedString(string: "  대치", attributes: [
+                    .font: UIFont.boldSystemFont(ofSize: 10), .foregroundColor: theme.muted]))
+                b.setAttributedTitle(s, for: .normal)
             }
             return b
         }
@@ -1081,12 +1406,16 @@ final class KeyboardViewController: UIInputViewController {
         guard sender.tag < suggestItems.count else { return }
         let item = suggestItems[sender.tag]
         if item.kind == .learned, item.text == armedSuggestion {
-            // 삭제 대기 중인 칩을 한 번 더 누르면 그 단어를 지운다
+            // 삭제 대기 중인 칩을 한 번 더 누르면 그 단어를 지운다 (5초 동안 되돌릴 수 있다)
             suggestArmTimer?.invalidate()
             armedSuggestion = nil
-            words.remove(item.text)
-            nextWords.remove(item.text)
-            refreshSuggestions()
+            let w = item.text
+            let count = words.remove(w)
+            let pairs = nextWords.remove(w)
+            showNotice("‘\(w)’ 추천에서 뺐어요") { [weak self] in
+                self?.words.restore(w, count: count ?? WordStore.threshold)
+                self?.nextWords.restore(pairs)
+            }
             return
         }
         let word = currentWord()
@@ -1097,11 +1426,18 @@ final class KeyboardViewController: UIInputViewController {
             skipCorrection = word
             words.learn(word, force: true)
             docInsert(" ")
-        case .pinned:
+        case .pinned, .replacement:
             replaceWord(word, with: item.text)
+        case .email:
+            if item.text.hasPrefix("@") {
+                docInsert(item.text)
+            } else {
+                for _ in 0..<emailDomainPart().count { docDelete() }
+                docInsert(item.text)
+            }
         default:
             replaceWord(word, with: item.text)
-            words.learn(item.text)
+            learn(item.text)
             if lang == .english { docInsert(" ") }
         }
         lastKeyID = "suggest"

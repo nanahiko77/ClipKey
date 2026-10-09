@@ -42,6 +42,12 @@ final class KeyArea: UIView {
         return nil
     }
 
+    /// 지금 자판의 모든 키
+    var allKeys: [KeyButton] {
+        if keys == nil { keys = KeyArea.collect(self) }
+        return keys ?? []
+    }
+
     private static func collect(_ v: UIView) -> [KeyButton] {
         v.subviews.flatMap { sub -> [KeyButton] in
             if let k = sub as? KeyButton { return [k] }
@@ -96,6 +102,15 @@ final class KeyButton: UIButton {
     var slideEnabled = false
     var onSlide: ((UITouch) -> Bool)?
     private var slid = false
+
+    /// 간격 키: 누른 채 좌우로 밀면 커서를 옮긴다. 0 이면 쓰지 않는다.
+    /// 시작은 cursorStart 만큼 밀었을 때, 그 뒤로 cursorStep 만큼 움직일 때마다 한 글자.
+    var cursorStep: CGFloat = 0
+    static let cursorStart: CGFloat = 14
+    var onCursorStart: (() -> Void)?
+    var onCursorMove: ((Int) -> Void)?
+    var onCursorEnd: (() -> Void)?
+    private var cursorX: CGFloat?
 
     private let hintLabel = UILabel()
     private var startX: CGFloat = 0
@@ -177,6 +192,10 @@ final class KeyButton: UIButton {
         holdTimer?.invalidate()
         holdTimer = nil
         stopRepeat()
+        if endCursor() {
+            onUp?()
+            return
+        }
         // 밀어서 입력했거나 반복 입력했으면 뗄 때 한 번 더 넣지 않는다
         if slid || repeated {
             onUp?()
@@ -205,6 +224,10 @@ final class KeyButton: UIButton {
         holdTimer = nil
         stopRepeat()
         hideBubble()
+        if endCursor() {
+            onUp?()
+            return
+        }
         if slid {
             onUp?()
             return
@@ -223,11 +246,16 @@ final class KeyButton: UIButton {
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         startX = touch.location(in: self).x
         swipeCount = nil
+        cursorX = nil
         return super.beginTracking(touch, with: event)
     }
 
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let result = super.continueTracking(touch, with: event)
+        if cursorStep > 0 {
+            trackCursor(touch)
+            return true          // 키 밖으로 나가도 계속 커서를 옮긴다
+        }
         trackSwipe(touch)
         if slideEnabled, bubble == nil, altBubble == nil, let slide = onSlide, slide(touch) {
             if !slid {
@@ -251,6 +279,29 @@ final class KeyButton: UIButton {
             }
         }
         return result
+    }
+
+    private func trackCursor(_ touch: UITouch) {
+        let x = touch.location(in: self).x
+        if cursorX == nil {
+            guard abs(x - startX) > KeyButton.cursorStart else { return }
+            cursorX = x
+            onCursorStart?()
+            return
+        }
+        guard let last = cursorX else { return }
+        let steps = Int((x - last) / cursorStep)
+        guard steps != 0 else { return }
+        cursorX = last + CGFloat(steps) * cursorStep
+        onCursorMove?(steps)
+    }
+
+    /// 커서를 옮기던 중이었으면 끝내고 true
+    private func endCursor() -> Bool {
+        guard cursorX != nil else { return false }
+        cursorX = nil
+        onCursorEnd?()
+        return true
     }
 
     private func trackSwipe(_ touch: UITouch) {

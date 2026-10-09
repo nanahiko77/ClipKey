@@ -65,30 +65,30 @@ extension KeyboardViewController {
 
     func buildToolbar() {
         toolbar.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        toolbar.distribution = .fill
         switch panel {
-        case .keys, .symbols:
+        case .keys, .symbols, .numpad:
             if adding {
-                // 단어 추가: 한/영과 123 은 남기고, 나머지 자리에 입력칸과 취소/저장
+                // 단어 추가: 입력 칸과 저장은 추천 줄 자리에 있다. 여기는 한/영, 취소와 안내만.
                 let langKey = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
                 langKey.setAttributedTitle(langTitle(), for: .normal)
                 toolbar.addArrangedSubview(langKey)
-                let box = UIView()
-                box.backgroundColor = theme.key
-                box.layer.cornerRadius = 8
-                box.heightAnchor.constraint(equalToConstant: 36).isActive = true
-                box.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                box.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                let field = UILabel()
-                field.font = .systemFont(ofSize: 15)
-                field.textColor = theme.text
-                field.lineBreakMode = .byTruncatingHead
-                field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                pinEdges(field, in: box, insets: UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10))
-                addField = field
-                updateAddField()
-                toolbar.addArrangedSubview(box)
-                toolbar.addArrangedSubview(toolButton("취소", width: 46, action: #selector(cancelAddWord)))
-                toolbar.addArrangedSubview(toolButton("저장", width: 46, active: true, action: #selector(saveAddWord)))
+                let cancel = toolButton("취소", symbol: "chevron.left", plain: true, action: #selector(cancelAddWord))
+                cancel.titleLabel?.font = .systemFont(ofSize: 15)
+                toolbar.addArrangedSubview(cancel)
+                let note = UILabel()
+                note.text = "추가한 단어는 추천 줄 맨 앞에"
+                note.font = .systemFont(ofSize: 13)
+                note.textColor = theme.muted
+                note.textAlignment = .center
+                note.adjustsFontSizeToFitWidth = true
+                note.minimumScaleFactor = 0.8
+                note.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                note.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                toolbar.addArrangedSubview(note)
+                let spacer = UIView()
+                spacer.widthAnchor.constraint(equalToConstant: 44).isActive = true
+                toolbar.addArrangedSubview(spacer)
                 break
             }
             let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
@@ -109,6 +109,9 @@ extension KeyboardViewController {
                 case "addword":
                     toolbar.addArrangedSubview(toolButton(symbol: "plus", width: 40, plain: true,
                                                           label: "단어 추가", action: #selector(startAddWordFromToolbar)))
+                case "emoji":
+                    toolbar.addArrangedSubview(toolButton(symbol: "smile", width: 40, plain: true,
+                                                          label: "이모지", action: #selector(openEmoji)))
                 default:
                     break
                 }
@@ -136,6 +139,8 @@ extension KeyboardViewController {
                 toolbar.addArrangedSubview(hideB)
                 hideToolButton = hideB
             }
+        case .emoji:
+            buildEmojiToolbar()
         case .clipboard:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
@@ -195,6 +200,10 @@ extension KeyboardViewController {
             updateLetterTitles()
         case .symbols:
             buildSymbols()
+        case .numpad:
+            buildNumpad()
+        case .emoji:
+            buildEmojiBody()
         case .clipboard:
             buildClipboard()
         case .settings:
@@ -219,7 +228,8 @@ extension KeyboardViewController {
     }
 
     /// 밀어서 연속 입력·반복 입력에서 빼는 키 (각자 다른 동작이 있거나, 실수로 눌리면 곤란한 키)
-    static let noSlideKeys: Set<String> = ["space", "return", "shift", "num", "punct", "stroke", "double", "⌫", "sympage"]
+    static let noSlideKeys: Set<String> = ["space", "return", "shift", "num", "punct", "stroke", "double", "⌫", "sympage",
+                                           "tokeys"]
 
     func wire(_ k: KeyButton) {
         k.onDown = { [weak self] in
@@ -299,12 +309,52 @@ extension KeyboardViewController {
         return k
     }
 
+    /// 간격 키. 누른 채 좌우로 밀면 커서를 옮긴다.
     func spaceKey() -> KeyButton {
-        iconKey("space", id: "space", label: "간격", fn: false, fallback: "간격")
+        let k = iconKey("space", id: "space", label: "간격", fn: false, fallback: "간격")
+        k.accessibilityHint = "누른 채 좌우로 밀면 커서 이동"
+        k.cursorStep = 9
+        k.onCursorStart = { [weak self, weak k] in
+            guard let self = self else { return }
+            self.resetComposer()
+            self.cursorDragging = true
+            self.selectionFeedback.prepare()
+            // 다른 키는 흐리게 해서 지금은 커서를 옮기는 중이라는 것을 보여 준다
+            for other in self.keyArea.allKeys where other !== k { other.alpha = 0.35 }
+            self.refreshSuggestions()
+        }
+        k.onCursorMove = { [weak self] steps in
+            guard let self = self, !self.adding else { return }
+            self.textDocumentProxy.adjustTextPosition(byCharacterOffset: steps)
+            if self.settings.haptic {
+                self.selectionFeedback.selectionChanged()
+                self.selectionFeedback.prepare()
+            }
+        }
+        k.onCursorEnd = { [weak self] in
+            guard let self = self else { return }
+            self.cursorDragging = false
+            for other in self.keyArea.allKeys { other.alpha = 1 }
+            self.lastSuggestSignature = nil
+            self.refreshSuggestions()
+        }
+        spaceKeyRef = k
+        return k
     }
 
+    /// 줄바꿈 키. 칸이 알려 주는 이름(검색, 이동, 보내기 …)이 있으면 글자로, 없으면 줄바꿈 모양.
     func returnKey() -> KeyButton {
-        iconKey("return", id: "return", label: "줄바꿈", accent: true, fallback: "↵")
+        let k = iconKey("return", id: "return", label: "줄바꿈", accent: true, fallback: "↵")
+        let title = returnTitle ?? (panel == .numpad ? "완료" : nil)
+        if let t = title {
+            k.setImage(nil, for: .normal)
+            k.setTitle(t, for: .normal)
+            k.titleLabel?.font = .boldSystemFont(ofSize: 16)
+            k.titleLabel?.adjustsFontSizeToFitWidth = true
+            k.titleLabel?.minimumScaleFactor = 0.7
+            k.accessibilityLabel = t
+        }
+        return k
     }
 
     func backspaceKey() -> KeyButton {
@@ -398,12 +448,25 @@ extension KeyboardViewController {
         let mid = hstack(letters(rows[2], on ? "*\"':;!?" : ""), margin: 6)
         let row3 = hstack([fixed(shiftK, 46), mid, fixed(backspaceKey(), 46)], equal: false)
 
-        let row4 = hstack([
-            fixed(numKey("123"), 52),
-            spaceKey(),
-            fixed(makeKey(".", hint: ",", fn: true), 46),      // 쉼표는 마침표를 꾹 눌러서
-            fixed(returnKey(), 76),
-        ], equal: false)
+        let row4: UIStackView
+        if fieldKind == .email || fieldKind == .url {
+            // 이메일·주소 칸: @ 또는 / 키를 두고, 마침표를 꾹 누르면 .com
+            let extra = fieldKind == .email ? "@" : "/"
+            row4 = hstack([
+                fixed(numKey("123"), 46),
+                fixed(makeKey(extra, font: 19), 40),
+                spaceKey(),
+                fixed(makeKey(".", hint: ".com", font: 20), 40),
+                fixed(returnKey(), 70),
+            ], equal: false)
+        } else {
+            row4 = hstack([
+                fixed(numKey("123"), 52),
+                spaceKey(),
+                fixed(makeKey(".", hint: ",", fn: true), 46),      // 쉼표는 마침표를 꾹 눌러서
+                fixed(returnKey(), 76),
+            ], equal: false)
+        }
 
         fillRows([row1, row2, row3, row4], spacing: 8, insets: UIEdgeInsets(top: 6, left: 4, bottom: 8, right: 4))
     }
@@ -431,6 +494,37 @@ extension KeyboardViewController {
         let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
                            rounded(makeKey("쌍자음", id: "double", font: 16)), rounded(returnKey())], spacing: 6)
         fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
+    }
+
+    /// 숫자·전화번호 칸: 바로 숫자판
+    func buildNumpad() {
+        func digit(_ d: String, _ letters: String, hint: String? = nil) -> KeyButton {
+            let k = makeKey(d, hint: hint, font: 24)
+            k.layer.cornerRadius = 8
+            if !letters.isEmpty {
+                let s = NSMutableAttributedString(string: d, attributes: [
+                    .font: UIFont.systemFont(ofSize: 24), .foregroundColor: theme.text])
+                s.append(NSAttributedString(string: "\n" + letters, attributes: [
+                    .font: UIFont.systemFont(ofSize: 9, weight: .medium), .foregroundColor: theme.hint, .kern: 1]))
+                k.setAttributedTitle(s, for: .normal)
+                k.titleLabel?.numberOfLines = 2
+                k.titleLabel?.textAlignment = .center
+            }
+            return k
+        }
+        func fn(_ k: KeyButton) -> KeyButton {
+            k.layer.cornerRadius = 8
+            return k
+        }
+        let back = fn(makeKey(lang == .hangul ? "가" : "ABC", id: "tokeys", fn: true, font: 16))
+        back.accessibilityLabel = "글자 자판으로"
+        let rows = [
+            hstack([digit("1", ""), digit("2", "ABC"), digit("3", "DEF"), fn(backspaceKey())], spacing: 6),
+            hstack([digit("4", "GHI"), digit("5", "JKL"), digit("6", "MNO"), fn(makeKey("-", fn: true, font: 22))], spacing: 6),
+            hstack([digit("7", "PQRS"), digit("8", "TUV"), digit("9", "WXYZ"), fn(makeKey(".", fn: true, font: 22))], spacing: 6),
+            hstack([back, digit("0", "", hint: "+"), fn(makeKey(",", fn: true, font: 22)), fn(returnKey())], spacing: 6),
+        ]
+        fillRows(rows, spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
     }
 
     func buildSymbols() {
