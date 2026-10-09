@@ -349,7 +349,11 @@ final class KeyboardViewController: UIInputViewController {
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
         if marked, !composing.isEmpty, Date().timeIntervalSince(markEditTime) > 0.3 {
-            resetComposer()
+            // 다른 곳을 누르면 앱이 조합 중 글자를 스스로 확정한다. 문서는 건드리지 않고 조합 상태만 버린다.
+            composer = HangulComposer()
+            composing = ""
+            snapshot = nil
+            lastCorrection = nil
         }
     }
 
@@ -482,7 +486,6 @@ final class KeyboardViewController: UIInputViewController {
         guard !composing.isEmpty else { return }
         if marked {
             textDocumentProxy.setMarkedText("", selectedRange: NSRange(location: 0, length: 0))
-            textDocumentProxy.unmarkText()
             markEditTime = Date()
         } else {
             for _ in 0..<composing.count { docDelete() }
@@ -607,12 +610,12 @@ final class KeyboardViewController: UIInputViewController {
         if marked {
             // 지웠다 다시 넣지 않고 조합 중 글자만 바꾼다 (사파리 웹 입력창의 커서 깜빡임을 막는다)
             let proxy = textDocumentProxy
+            // 확정은 unmarkText 대신 insertText 로 한다. insertText 는 조합 중 글자를 바꿔 넣으며 조합을 끝낸다.
+            // (사파리 등에서는 unmarkText 가 바로 반영되지 않아, 다음 조합이 앞 글자를 덮어쓰는 일이 있었다)
             if !commit.isEmpty {
-                proxy.setMarkedText(commit, selectedRange: NSRange(location: (commit as NSString).length, length: 0))
-                proxy.unmarkText()
+                proxy.insertText(commit)
             } else if newText.isEmpty, !composing.isEmpty {
                 proxy.setMarkedText("", selectedRange: NSRange(location: 0, length: 0))
-                proxy.unmarkText()
             }
             if !newText.isEmpty {
                 proxy.setMarkedText(newText, selectedRange: NSRange(location: (newText as NSString).length, length: 0))
@@ -630,7 +633,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 조합을 끝낸다. 문서의 글자는 그대로 둔다.
     func resetComposer() {
         if marked, !composing.isEmpty {
-            textDocumentProxy.unmarkText()      // 조합 중 글자를 그대로 확정
+            textDocumentProxy.insertText(composing)      // 조합 중 글자를 그대로 확정
             markEditTime = Date()
         }
         lastCorrection = nil
