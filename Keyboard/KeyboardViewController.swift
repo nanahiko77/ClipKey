@@ -432,6 +432,12 @@ final class KeyboardViewController: UIInputViewController {
     func naraVowel(_ id: String, _ a: Character, _ b: Character) {
         composer.nara = true
         var v = a
+        // 글자가 완성되는 쪽을 먼저 넣는다. 예: "주" 뒤에서 ㅏㅓ 키를 누르면 "주ㅏ"가 아니라 "줘".
+        if composer.jong.isEmpty, !composer.jung.isEmpty,
+           HangulComposer.jungChar(composer.jung + [a], nara: true) == nil,
+           HangulComposer.jungChar(composer.jung + [b], nara: true) != nil {
+            v = b
+        }
         if lastKeyID == id, let snap = snapshot {
             for _ in 0..<(composing.count + snap.commit.count) { docDelete() }
             composer = snap.composer
