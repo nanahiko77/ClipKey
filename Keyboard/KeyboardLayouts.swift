@@ -597,11 +597,14 @@ extension KeyboardViewController {
                            rounded(backspaceKey())], spacing: 6)
         let row2 = hstack([jamo("ㄹ", "ㄹ", "4"), jamo("ㅁ", "ㅁ", "5"), jamo("ㅗ ㅜ", "v:ㅗㅜ", "6"),
                            rounded(spaceKey())], spacing: 6)
-        // 문장부호 키를 반으로 나눠 옆에 123 을 둔다
-        let punctAndNum = hstack([rounded(numKey("123")),
-                                  rounded(makeKey(".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
-        let row3 = hstack([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9"),
-                           punctAndNum], spacing: 6)
+        // 문장부호 키를 반으로 나눠 옆에 123 을 둔다.
+        // 123 은 ㅣ 바로 옆이라 잘못 눌리기 쉬워서: ㅣ 와의 틈을 넓히고, 123 의 왼쪽 가장자리 9pt 는 ㅣ 로 본다.
+        let num = rounded(numKey("123"))
+        num.guardInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 0)
+        let punctAndNum = hstack([num, rounded(makeKey(".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
+        let iKey = jamo("ㅣ", "ㅣ", "9")
+        let row3 = hstack([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), iKey, punctAndNum], spacing: 6)
+        row3.setCustomSpacing(10, after: iKey)
         let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
                            rounded(makeKey("쌍자음", id: "double", font: 16)), rounded(returnKey())], spacing: 6)
         fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))

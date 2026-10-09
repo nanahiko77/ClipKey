@@ -12,6 +12,14 @@ final class KeyArea: UIView {
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
+        // 잘못 누르면 곤란한 키(123 등)는 가장자리를 덜 받는다: 그 자리는 옆의 글자 키로 본다
+        if let k = hit as? KeyButton, k.guardInsets != .zero {
+            let f = k.convert(k.bounds, to: self)
+            let core = CGRect(x: f.minX + k.guardInsets.left, y: f.minY + k.guardInsets.top,
+                              width: f.width - k.guardInsets.left - k.guardInsets.right,
+                              height: f.height - k.guardInsets.top - k.guardInsets.bottom)
+            if !core.contains(point), let other = nearestKey(to: point, excluding: k) { return other }
+        }
         // 키, 버튼, 스위치, 목록 같은 것은 그대로 둔다. 빈 바탕이나 줄 사이일 때만 가까운 키를 찾는다.
         if let h = hit, !(h === self || type(of: h) == UIStackView.self) { return hit }
         guard self.point(inside: point, with: event) else { return hit }
@@ -30,6 +38,24 @@ final class KeyArea: UIView {
         }
         if let b = best, bestDistance <= KeyArea.reach * KeyArea.reach { return b }
         return hit
+    }
+
+    /// 가장 가까운 다른 키 (reach 안에서)
+    private func nearestKey(to point: CGPoint, excluding: KeyButton) -> KeyButton? {
+        if keys == nil { keys = KeyArea.collect(self) }
+        var best: KeyButton?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for k in keys ?? [] where k !== excluding && !k.isHidden && k.superview != nil {
+            let f = k.convert(k.bounds, to: self)
+            let dx = max(f.minX - point.x, 0, point.x - f.maxX)
+            let dy = max(f.minY - point.y, 0, point.y - f.maxY)
+            let d = dx * dx + dy * dy
+            if d < bestDistance {
+                bestDistance = d
+                best = k
+            }
+        }
+        return bestDistance <= KeyArea.reach * KeyArea.reach ? best : nil
     }
 
     /// 이 위치(keyArea 좌표)의 키. inner 만큼 가장자리를 빼고 본다 (밀어서 입력할 때 옆 키 안쪽까지 들어가야 바뀌도록)
@@ -59,6 +85,8 @@ final class KeyArea: UIView {
 /// 자판의 키 하나. 보조 글자가 있으면 꾹 눌렀을 때 말풍선을 띄우고, 뗄 때 보조 글자를 입력한다.
 final class KeyButton: UIButton {
     var id = ""
+    /// 이 키의 가장자리 중 덜 받을 폭. 그 자리를 누르면 옆 키로 본다 (잘못 누르면 화면이 바뀌는 키에 쓴다).
+    var guardInsets: UIEdgeInsets = .zero
     var hintText: String? { didSet { hintLabel.text = hintText } }
     var hintColor: UIColor = .gray { didSet { hintLabel.textColor = hintColor } }
     var bubbleBackground: UIColor = .white
