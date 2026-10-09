@@ -935,7 +935,7 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         top.font = .systemFont(ofSize: 12)
         top.textColor = theme.muted
         let bottom = UILabel()
-        bottom.text = "▲▼ 로 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다."
+        bottom.text = "≡ 를 잡고 끌어 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다."
         bottom.font = .systemFont(ofSize: 12)
         bottom.textColor = theme.muted
         bottom.adjustsFontSizeToFitWidth = true
@@ -1043,31 +1043,20 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         sw.tag = indexPath.section * 100 + indexPath.row
         sw.addTarget(self, action: #selector(switchChanged(_:)), for: .valueChanged)
         if indexPath.section == 0 {
-            // [▲][▼][스위치]
-            func arrow(_ name: String, _ tag: Int, enabled: Bool) -> UIButton {
-                let b = UIButton(type: .system)
-                b.setImage(Icon.image(name, size: 18, line: 2), for: .normal)
-                b.tintColor = theme.text
-                b.backgroundColor = theme.funcKey
-                b.layer.cornerRadius = 8
-                b.frame = CGRect(x: 0, y: 0, width: 34, height: 32)
-                b.tag = tag
-                b.isEnabled = enabled
-                b.alpha = enabled ? 1 : 0.3
-                b.addTarget(self, action: #selector(moveTapped(_:)), for: .touchUpInside)
-                return b
-            }
-            let up = arrow("chevron.up", indexPath.row * 10 + 1, enabled: indexPath.row > 0)
-            up.accessibilityLabel = "위로"
-            let down = arrow("chevron.down", indexPath.row * 10 + 2, enabled: indexPath.row < order.count - 1)
-            down.accessibilityLabel = "아래로"
-            let box = UIView(frame: CGRect(x: 0, y: 0, width: 34 + 6 + 34 + 10 + 51, height: 32))
-            up.frame.origin = CGPoint(x: 0, y: 0)
-            down.frame.origin = CGPoint(x: 40, y: 0)
-            sw.frame.origin = CGPoint(x: 84, y: 0.5)
-            box.addSubview(up)
-            box.addSubview(down)
+            // [스위치][≡] : ≡ 손잡이를 잡고 끌 때만 순서를 바꾸고, 나머지 자리는 목록 스크롤
+            let handle = UIImageView(image: Icon.image("grip", size: 20, line: 2))
+            handle.tintColor = theme.muted
+            handle.contentMode = .center
+            handle.isUserInteractionEnabled = true
+            handle.accessibilityLabel = "끌어서 순서 바꾸기"
+            let press = UILongPressGestureRecognizer(target: self, action: #selector(handleDrag(_:)))
+            press.minimumPressDuration = 0        // 손잡이는 닿자마자 잡는다 (목록 스크롤보다 먼저)
+            handle.addGestureRecognizer(press)
+            let box = UIView(frame: CGRect(x: 0, y: 0, width: 51 + 8 + 40, height: 44))
+            sw.frame.origin = CGPoint(x: 0, y: 6.5)
+            handle.frame = CGRect(x: 59, y: 0, width: 40, height: 44)
             box.addSubview(sw)
+            box.addSubview(handle)
             cell.accessoryView = box
         } else {
             cell.accessoryView = sw
@@ -1079,14 +1068,32 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         section == 0 ? "왼쪽 (한/영 다음)" : "오른쪽 끝"
     }
 
-    @objc private func moveTapped(_ b: UIButton) {
-        let row = b.tag / 10
-        let to = b.tag % 10 == 1 ? row - 1 : row + 1
-        guard order.indices.contains(row), order.indices.contains(to) else { return }
-        order.swapAt(row, to)
-        settings.toolbarOrder = order
-        updatePreview()
-        table.reloadSections(IndexSet(integer: 0), with: .automatic)
+    private var dragRow: Int?
+
+    /// ≡ 손잡이를 끄는 동안: 손가락이 지나는 줄과 자리를 바꾼다
+    @objc private func handleDrag(_ g: UILongPressGestureRecognizer) {
+        let p = g.location(in: table)
+        switch g.state {
+        case .began:
+            guard let path = table.indexPathForRow(at: p), path.section == 0 else { return }
+            dragRow = path.row
+            table.cellForRow(at: path)?.contentView.alpha = 0.5
+        case .changed:
+            guard let from = dragRow, let target = table.indexPathForRow(at: p), target.section == 0,
+                  target.row != from else { return }
+            let item = order.remove(at: from)
+            order.insert(item, at: target.row)
+            table.moveRow(at: IndexPath(row: from, section: 0), to: target)
+            dragRow = target.row
+            updatePreview()
+        default:
+            if dragRow != nil {
+                dragRow = nil
+                settings.toolbarOrder = order
+                updatePreview()
+                table.reloadSections(IndexSet(integer: 0), with: .none)   // 스위치 번호를 새 순서로
+            }
+        }
     }
 
     func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle { .none }
