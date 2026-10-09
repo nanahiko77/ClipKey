@@ -1244,19 +1244,53 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         deletedAllText = ""
-        if let after = textDocumentProxy.documentContextAfterInput, !after.isEmpty {
-            textDocumentProxy.adjustTextPosition(byCharacterOffset: after.count)
-            ctxCache = nil
+        moveToDocumentEnd(0) { [weak self] in self?.deleteAllPass(0) }
+    }
+
+    /// 커서를 문서 맨 끝으로 옮긴다. 앱이 커서 뒤 글자를 줄 끝까지만 알려 주는 경우가 많아서
+    /// (그래서 전에는 커서가 있던 줄까지만 지워졌다) 줄 끝에 닿으면 한 칸씩 넘겨 보며 더 못 갈 때까지 반복한다.
+    func moveToDocumentEnd(_ pass: Int, then done: @escaping () -> Void) {
+        ctxCache = nil
+        let proxy = textDocumentProxy
+        guard pass < 300 else { done(); return }
+        if let after = proxy.documentContextAfterInput, !after.isEmpty {
+            proxy.adjustTextPosition(byCharacterOffset: after.count)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                self?.moveToDocumentEnd(pass + 1, then: done)
+            }
+            return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
-            self?.deleteAllPass(0)
+        // 뒤가 비어 보이면 한 칸 넘겨 본다. 앞 글자가 바뀌었으면 아직 뒤에 줄이 있던 것.
+        let before = proxy.documentContextBeforeInput ?? ""
+        proxy.adjustTextPosition(byCharacterOffset: 1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+            guard let self = self else { return }
+            let now = self.textDocumentProxy.documentContextBeforeInput ?? ""
+            if now != before {
+                self.moveToDocumentEnd(pass + 1, then: done)
+            } else {
+                done()
+            }
         }
     }
 
     /// 키보드는 커서 앞 글자를 한 번에 일부만 볼 수 있어서, 남은 것이 없을 때까지 나눠 지운다
-    func deleteAllPass(_ pass: Int) {
+    func deleteAllPass(_ pass: Int, blankTries: Int = 0) {
         ctxCache = nil          // 남은 글자는 실제로 읽어서 확인한다
-        guard pass < 40, let before = docBefore, !before.isEmpty else {
+        // 어떤 앱은 빈 줄에서 앞 글자를 빈 값으로 알려 준다. 아직 글자가 남아 있으면 줄바꿈 하나를 지우고 계속한다.
+        // 세 번 연달아 빈 값이면 정말 다 지운 것으로 보고, 헛지운 줄바꿈은 되돌리기 글에서 뺀다.
+        if pass < 200, (docBefore ?? "").isEmpty, textDocumentProxy.hasText {
+            if blankTries < 3 {
+                docDelete()
+                deletedAllText = "\n" + deletedAllText
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+                    self?.deleteAllPass(pass + 1, blankTries: blankTries + 1)
+                }
+                return
+            }
+            deletedAllText = String(deletedAllText.dropFirst(min(blankTries, deletedAllText.prefix { $0 == "\n" }.count)))
+        }
+        guard pass < 200, let before = docBefore, !before.isEmpty else {
             lastKeyID = "⌫"
             let text = deletedAllText
             deletedAllText = ""
