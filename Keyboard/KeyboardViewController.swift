@@ -137,6 +137,14 @@ final class KeyboardViewController: UIInputViewController {
     weak var arrowLeftButton: UIButton?
     weak var arrowRightButton: UIButton?
     weak var hideToolButton: UIButton?
+    weak var undoToolButton: UIButton?
+    weak var redoToolButton: UIButton?
+    /// 되돌리기 기록: 이 키보드로 바꾼 것만 단어 단위로. 커서를 옮기거나 칸이 바뀌면 비운다.
+    var undoStack: [EditGroup] = []
+    var redoStack: [EditGroup] = []
+    var editOpen = false
+    var lastEditTime = Date.distantPast
+    var editRecording = true
     /// 마지막으로 그린 자판의 조건. 키보드가 다시 뜰 때 같으면 새로 그리지 않는다.
     var builtSignature = ""
     lazy var impact = UIImpactFeedbackGenerator(style: .light)
@@ -348,6 +356,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        clearEditHistory()
         capture()
         ctxCache = nil
         // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
@@ -383,7 +392,10 @@ final class KeyboardViewController: UIInputViewController {
     /// marked text 를 쓸 때: 우리가 바꾼 직후가 아닌데 커서가 움직였으면 사용자가 다른 곳을 누른 것이다
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
-        if Date().timeIntervalSince(ownEditTime) > 0.3 { ctxCache = nil }   // 사용자가 커서를 옮겼다
+        if Date().timeIntervalSince(ownEditTime) > 0.3 {
+            ctxCache = nil      // 사용자가 커서를 옮겼다
+            clearEditHistory()  // 되돌리기 기록은 커서 자리 기준이라 더는 맞지 않는다
+        }
         if marked, !composing.isEmpty, Date().timeIntervalSince(markEditTime) > 0.3 {
             // 다른 곳을 누르면 앱이 조합 중 글자를 스스로 확정한다. 문서는 건드리지 않고 조합 상태만 버린다.
             composer = HangulComposer()
@@ -395,7 +407,10 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
-        if Date().timeIntervalSince(ownEditTime) > 0.3 { ctxCache = nil }   // 앱이 글자를 바꿨다
+        if Date().timeIntervalSince(ownEditTime) > 0.3 {
+            ctxCache = nil      // 앱이 글자를 바꿨다
+            clearEditHistory()
+        }
         let was = isDark
         resolveTheme()
         let fieldChanged = checkField()
@@ -456,7 +471,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(isLandscape)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
@@ -584,6 +599,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func docInsert(_ s: String) {
+        if addBuffer == nil { recordInsert(s) }
         if addBuffer == nil, ctxCache != nil {
             ctxCache! += s
             if ctxCache!.count > 400 { ctxCache = String(ctxCache!.suffix(300)) }
@@ -598,6 +614,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func docDelete() {
+        if addBuffer == nil { recordDelete() }
         if addBuffer == nil, ctxCache != nil, !ctxCache!.isEmpty { ctxCache!.removeLast() }
         ownEditTime = Date()
         if let b = addBuffer {
@@ -1297,7 +1314,10 @@ final class KeyboardViewController: UIInputViewController {
         // 세 번 연달아 빈 값이면 정말 다 지운 것으로 보고, 헛지운 줄바꿈은 되돌리기 글에서 뺀다.
         if pass < 400, (docBefore ?? "").isEmpty {
             if blankTries < 3 {
+                recordDeleteBlock("\n")
+                editRecording = false
                 docDelete()
+                editRecording = true
                 deletedAllText = "\n" + deletedAllText
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
                     self?.deleteAllPass(pass + 1, blankTries: blankTries + 1)
@@ -1320,7 +1340,10 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         deletedAllText = before + deletedAllText
+        recordDeleteBlock(before)
+        editRecording = false
         for _ in 0..<before.count { docDelete() }
+        editRecording = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             self?.deleteAllPass(pass + 1)
         }
@@ -1420,6 +1443,120 @@ final class KeyboardViewController: UIInputViewController {
         ctxCache = nil
     }
 
+    // MARK: - 되돌리기 / 다시 하기
+
+    /// 커서 앞에서 일어난 바꾸기 한 묶음 (단어 하나 정도): removed 를 지우고 inserted 를 넣은 것과 같다
+    struct EditGroup {
+        var removed = ""
+        var inserted = ""
+    }
+
+    func clearEditHistory() {
+        guard !undoStack.isEmpty || !redoStack.isEmpty || editOpen else { return }
+        undoStack.removeAll()
+        redoStack.removeAll()
+        editOpen = false
+        updateUndoButtons()
+    }
+
+    /// 새 묶음을 열지: 간격·줄바꿈 뒤, 또는 잠깐(1.5초) 쉬었다가 치면 새 묶음
+    private func currentGroupIndex() -> Int {
+        let now = Date()
+        if !editOpen || undoStack.isEmpty || now.timeIntervalSince(lastEditTime) > 1.5 {
+            undoStack.append(EditGroup())
+            if undoStack.count > 60 { undoStack.removeFirst() }
+            editOpen = true
+        }
+        lastEditTime = now
+        if !redoStack.isEmpty { redoStack.removeAll() }
+        return undoStack.count - 1
+    }
+
+    func recordInsert(_ s: String) {
+        guard editRecording, !s.isEmpty else { return }
+        let i = currentGroupIndex()
+        undoStack[i].inserted += s
+        // 간격·줄바꿈을 치면 이 단어 묶음은 닫는다 (기본 키보드처럼 단어 단위로 되돌린다)
+        if s.last == " " || s.last == "\n" { editOpen = false }
+        updateUndoButtons()
+    }
+
+    func recordDelete() {
+        guard editRecording else { return }
+        let i = currentGroupIndex()
+        if !undoStack[i].inserted.isEmpty {
+            undoStack[i].inserted.removeLast()
+        } else if let last = (textDocumentProxy.documentContextBeforeInput ?? "").last {
+            undoStack[i].removed = String(last) + undoStack[i].removed
+        }
+        updateUndoButtons()
+    }
+
+    /// 한꺼번에 지운 글자 (전체 삭제): 글자마다 앞 글자를 읽지 않고 한 번에 적는다
+    func recordDeleteBlock(_ text: String) {
+        guard !text.isEmpty else { return }
+        let i = currentGroupIndex()
+        var t = text
+        while !t.isEmpty, !undoStack[i].inserted.isEmpty {
+            undoStack[i].inserted.removeLast()
+            t.removeLast()
+        }
+        undoStack[i].removed = t + undoStack[i].removed
+        updateUndoButtons()
+    }
+
+    func updateUndoButtons() {
+        let canUndo = undoStack.contains { !$0.removed.isEmpty || !$0.inserted.isEmpty }
+        undoToolButton?.isEnabled = canUndo
+        undoToolButton?.alpha = canUndo ? 1 : 0.35
+        redoToolButton?.isEnabled = !redoStack.isEmpty
+        redoToolButton?.alpha = redoStack.isEmpty ? 0.35 : 1
+    }
+
+    /// 묶음을 거꾸로 적용한다: 커서 앞이 `drop` 으로 끝나야 지우고 `put` 을 넣는다
+    private func applyEdit(drop: String, put: String) -> Bool {
+        guard (textDocumentProxy.documentContextBeforeInput ?? "").hasSuffix(drop) else { return false }
+        editRecording = false
+        for _ in 0..<drop.count { docDelete() }
+        if !put.isEmpty { docInsert(put) }
+        editRecording = true
+        ctxCache = nil
+        return true
+    }
+
+    @objc func undoTapped() {
+        resetComposer()
+        haptic()
+        while let g = undoStack.popLast() {
+            if g.removed.isEmpty && g.inserted.isEmpty { continue }
+            editOpen = false
+            if applyEdit(drop: g.inserted, put: g.removed) {
+                redoStack.append(g)
+            } else {
+                clearEditHistory()       // 문서가 기록과 달라졌다
+            }
+            break
+        }
+        lastSuggestSignature = nil
+        refreshSuggestions()
+        updateUndoButtons()
+    }
+
+    @objc func redoTapped() {
+        resetComposer()
+        haptic()
+        guard let g = redoStack.popLast() else { return }
+        if applyEdit(drop: g.removed, put: g.inserted) {
+            undoStack.append(g)
+            editOpen = false
+        } else {
+            clearEditHistory()
+        }
+        lastSuggestSignature = nil
+        refreshSuggestions()
+        updateUndoButtons()
+    }
+
     @objc func cursorLeft() {
         resetComposer()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
@@ -1468,6 +1605,16 @@ final class KeyboardViewController: UIInputViewController {
             if panel == .keys, let prev = previousWord(in: docBefore ?? "") {
                 for w in nextWords.predictions(after: prev, limit: 3) { add(w, .next) }
             }
+            // 기본 키보드처럼 추천 줄을 늘 채운다: 내가 자주 쓰는 단어 → 그래도 모자라면 기본 단어
+            if panel == .keys, fieldKind == .normal, items.count < 3 {
+                let hangul = lang == .hangul
+                for w in words.learnedWords.prefix(30) where items.count < 3 && KoCorrector.isHangulWord(w.word) == hangul {
+                    add(w.word, .next)
+                }
+                for w in hangul ? KeyboardViewController.starterKo : KeyboardViewController.starterEn where items.count < 3 {
+                    add(w, .next)
+                }
+            }
             return items
         }
         // 순서: 직접 넣은 단어 → 자주 친 단어 → 맞춤법(교정, 사전) → 고정한 클립
@@ -1508,6 +1655,10 @@ final class KeyboardViewController: UIInputViewController {
         }
         return items
     }
+
+    /// 아무것도 안 칠 때 추천 줄을 채우는 기본 단어
+    static let starterKo = ["나는", "오늘", "그래서", "네", "저는"]
+    static let starterEn = ["I", "The", "I'm", "Thanks"]
 
     static let emailDomains = ["naver.com", "gmail.com", "icloud.com", "daum.net", "hanmail.net", "kakao.com",
                                "nate.com", "outlook.com", "hotmail.com", "yahoo.com"]
@@ -1627,6 +1778,10 @@ final class KeyboardViewController: UIInputViewController {
 
         if typing && !items.isEmpty {
             buildSlots(items, reserved: undo == nil ? 0 : undoChipWidth(undo ?? "") + 6)
+        } else if !typing, clip == nil, undo == nil, !items.isEmpty,
+                  items.allSatisfy({ $0.kind == .next }) {
+            // 치기 전: 기본 키보드처럼 같은 폭 세 칸 (강조 없이)
+            buildSlots(items, highlight: false)
         } else {
             var previousPlain = false
             for (i, item) in items.enumerated() {
@@ -1706,7 +1861,7 @@ final class KeyboardViewController: UIInputViewController {
         undoChip(title, bold: false).systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
     }
 
-    func buildSlots(_ items: [(text: String, kind: SuggestKind)], reserved: CGFloat = 0) {
+    func buildSlots(_ items: [(text: String, kind: SuggestKind)], reserved: CGFloat = 0, highlight: Bool = true) {
         var rest = Array(items.indices)
         var left: Int?
         if let o = items.firstIndex(where: { $0.kind == .original }) {
@@ -1731,7 +1886,7 @@ final class KeyboardViewController: UIInputViewController {
             slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0,
                                         constant: -reserved / 3).isActive = true
             if let i = index {
-                let b = suggestionButton(items[i], index: i, slot: true, best: pos == 1)
+                let b = suggestionButton(items[i], index: i, slot: true, best: highlight && pos == 1)
                 pinEdges(b, in: slot, insets: UIEdgeInsets(top: 3, left: 3, bottom: 3, right: 3))
             }
             if pos < 2 {

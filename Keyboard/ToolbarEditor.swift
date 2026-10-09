@@ -1,21 +1,21 @@
 import UIKit
 
-/// 상단바 꾸미기.
-/// 위: 실제 상단바 모양의 미리 보기. 꾹 눌러 끌면 순서가 바뀌고, ⊖ 를 누르거나 아래로 끌어내리면 뺀다.
+/// 상단바 꾸미기 (8칸).
+/// 위: 실제 상단바 모양의 미리 보기. 꾹 눌러 끌면 자리가 바뀌고, ⊖ 를 누르거나 아래로 끌어내리면 뺀다.
+///     가운데 빈 곳을 기준으로 앞은 왼쪽에, 뒤는 오른쪽 끝에 붙는다. 어떤 도구든 어디에나 놓을 수 있다.
 /// 아래: 모든 도구를 이름과 함께. 누르면 넣고/빼고, 꾹 눌러 위로 끌어 올리면 그 자리에 넣는다.
-/// 왼쪽 도구(클립보드·이모지·설정·단어 추가)는 순서를 바꿀 수 있고, 화살표와 닫기는 늘 오른쪽 끝에 붙는다.
+/// 화살표와 되돌리기는 2칸. 칸이 모자라면 흐리게 보이고 넣을 수 없다.
 final class ToolbarEditor: UIView {
-    static let leftItems = Settings.toolbarItemsAll
-    static let rightItems = ["arrows", "hide"]
-    static let allItems = ["clipboard", "emoji", "settings", "addword", "arrows", "hide"]
     static let names: [String: String] = [
         "clipboard": "클립보드", "settings": "설정", "addword": "단어 추가", "emoji": "이모지",
-        "arrows": "화살표", "hide": "닫기",
+        "arrows": "커서 화살표", "undo": "되돌리기", "hide": "닫기",
     ]
     static let icons: [String: String] = [
         "clipboard": "clipboard", "settings": "slider.horizontal.3", "addword": "plus", "emoji": "smile",
         "hide": "keyboard.down",
     ]
+    static let singles = ["clipboard", "emoji", "settings", "addword", "hide"]
+    static let doubles = ["arrows", "undo"]
 
     private let settings: Settings
     private let theme: Theme
@@ -24,17 +24,17 @@ final class ToolbarEditor: UIView {
     private let barCard = UIView()
     private let barStack = UIStackView()
     private let gridCard = UIView()
-    private let gridStack = UIStackView()
+    private let gridRows = UIStackView()
     private let placeholder = UIView()
+    private var placeholderWidth: NSLayoutConstraint?
+    private let meterLabel = UILabel()
     private let blue = UIColor.systemBlue
     private let red = UIColor.systemRed
 
-    /// 상단바 왼쪽에 켜 둔 도구 (순서대로)
-    private var left: [String]
-    private var arrowsOn: Bool
-    private var hideOn: Bool
-    /// 미리 보기 안의 왼쪽 도구 뷰 (끌 때 놓을 자리를 계산한다)
-    private var leftViews: [(item: String, view: UIView)] = []
+    /// 상단바 배치 ("gap" 이 가운데 빈 곳)
+    private var layout: [String]
+    /// 미리 보기 안의 도구와 빈 곳 뷰 (끌 때 놓을 자리를 계산한다)
+    private var barViews: [(item: String, view: UIView)] = []
 
     private var dragItem: String?
     private var dragFromBar = false
@@ -45,15 +45,17 @@ final class ToolbarEditor: UIView {
     init(settings: Settings, theme: Theme) {
         self.settings = settings
         self.theme = theme
-        left = settings.toolbarOrder.filter { !settings.toolbarOff.contains($0) }
-        arrowsOn = settings.showArrows
-        hideOn = settings.showHide
+        layout = settings.toolbarLayout
         super.init(frame: .zero)
         build()
         reload()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private var used: Int { layout.filter { $0 != Settings.toolbarGap }.reduce(0) { $0 + Settings.toolbarSlots($1) } }
+    private func fits(_ item: String) -> Bool { used + Settings.toolbarSlots(item) <= Settings.toolbarCapacity }
+    private func isOn(_ item: String) -> Bool { layout.contains(item) }
 
     // MARK: 화면 구성
 
@@ -71,6 +73,29 @@ final class ToolbarEditor: UIView {
             l.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -bottom),
             l.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 26),
             l.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -26),
+        ])
+        return box
+    }
+
+    /// 소제목 줄 오른쪽에 "7/8칸"
+    private func meterRow() -> UIView {
+        let l = UILabel()
+        l.text = "상단바 · 끌어서 자리 바꾸기"
+        l.font = .systemFont(ofSize: 13)
+        l.textColor = theme.muted
+        meterLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        meterLabel.setContentHuggingPriority(.required, for: .horizontal)
+        let row = UIStackView(arrangedSubviews: [l, meterLabel])
+        row.axis = .horizontal
+        row.spacing = 8
+        let box = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: box.topAnchor, constant: 10),
+            row.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -6),
+            row.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 26),
+            row.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -26),
         ])
         return box
     }
@@ -111,52 +136,53 @@ final class ToolbarEditor: UIView {
         barCard.heightAnchor.constraint(equalToConstant: 52).isActive = true
         barStack.axis = .horizontal
         barStack.alignment = .center
-        barStack.spacing = 6
+        barStack.spacing = 4
         barStack.translatesAutoresizingMaskIntoConstraints = false
         barCard.addSubview(barStack)
         NSLayoutConstraint.activate([
             barStack.topAnchor.constraint(equalTo: barCard.topAnchor),
             barStack.bottomAnchor.constraint(equalTo: barCard.bottomAnchor),
-            barStack.leadingAnchor.constraint(equalTo: barCard.leadingAnchor, constant: 10),
-            barStack.trailingAnchor.constraint(equalTo: barCard.trailingAnchor, constant: -10),
+            barStack.leadingAnchor.constraint(equalTo: barCard.leadingAnchor, constant: 8),
+            barStack.trailingAnchor.constraint(equalTo: barCard.trailingAnchor, constant: -8),
         ])
 
         gridCard.backgroundColor = theme.row
         gridCard.layer.cornerRadius = 12
-        gridStack.axis = .horizontal
-        gridStack.distribution = .fillEqually
-        gridStack.alignment = .top
-        gridStack.translatesAutoresizingMaskIntoConstraints = false
-        gridCard.addSubview(gridStack)
+        gridRows.axis = .vertical
+        gridRows.spacing = 12
+        gridRows.translatesAutoresizingMaskIntoConstraints = false
+        gridCard.addSubview(gridRows)
         NSLayoutConstraint.activate([
-            gridStack.topAnchor.constraint(equalTo: gridCard.topAnchor, constant: 12),
-            gridStack.bottomAnchor.constraint(equalTo: gridCard.bottomAnchor, constant: -10),
-            gridStack.leadingAnchor.constraint(equalTo: gridCard.leadingAnchor, constant: 4),
-            gridStack.trailingAnchor.constraint(equalTo: gridCard.trailingAnchor, constant: -4),
+            gridRows.topAnchor.constraint(equalTo: gridCard.topAnchor, constant: 12),
+            gridRows.bottomAnchor.constraint(equalTo: gridCard.bottomAnchor, constant: -10),
+            gridRows.leadingAnchor.constraint(equalTo: gridCard.leadingAnchor, constant: 4),
+            gridRows.trailingAnchor.constraint(equalTo: gridCard.trailingAnchor, constant: -4),
         ])
 
         placeholder.layer.cornerRadius = 8
         placeholder.layer.borderWidth = 2
         placeholder.layer.borderColor = blue.cgColor
         placeholder.backgroundColor = blue.withAlphaComponent(0.08)
-        placeholder.widthAnchor.constraint(equalToConstant: 34).isActive = true
+        placeholderWidth = placeholder.widthAnchor.constraint(equalToConstant: 30)
+        placeholderWidth?.isActive = true
         placeholder.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        content.addArrangedSubview(caption("상단바 · 꾹 눌러 끌면 순서 바꾸기", size: 13, top: 10, bottom: 6))
+        content.addArrangedSubview(meterRow())
         content.addArrangedSubview(inset(barCard))
-        content.addArrangedSubview(caption("⊖ 를 누르거나 아래로 끌어내리면 뺍니다", size: 12, top: 6, bottom: 0))
+        content.addArrangedSubview(caption("⊖ 로 빼거나 아래로 끌어내리기 · 화살표와 되돌리기는 2칸", size: 12, top: 6, bottom: 0))
         content.addArrangedSubview(caption("모든 도구 · 누르거나 위로 끌어 올리면 넣기", size: 13, top: 16, bottom: 6))
         content.addArrangedSubview(inset(gridCard))
     }
 
-    /// 도구 아이콘. 화살표는 좌우 두 개를 붙여서.
+    /// 도구 아이콘. 2칸 도구는 아이콘 두 개를 붙여서.
     private func iconView(_ item: String, size: CGFloat, color: UIColor) -> UIView {
-        if item == "arrows" {
-            let l = UIImageView(image: Icon.image("chevron.left", size: size - 2, line: 2))
-            let r = UIImageView(image: Icon.image("chevron.right", size: size - 2, line: 2))
+        if item == "arrows" || item == "undo" {
+            let names = item == "arrows" ? ("chevron.left", "chevron.right") : ("undo", "redo")
+            let l = UIImageView(image: Icon.image(names.0, size: size - 1, line: item == "arrows" ? 2 : 1.75))
+            let r = UIImageView(image: Icon.image(names.1, size: size - 1, line: item == "arrows" ? 2 : 1.75))
             for v in [l, r] { v.tintColor = color; v.contentMode = .center }
             let s = UIStackView(arrangedSubviews: [l, r])
-            s.spacing = 2
+            s.spacing = item == "arrows" ? 6 : 10
             s.isUserInteractionEnabled = false
             return s
         }
@@ -182,14 +208,16 @@ final class ToolbarEditor: UIView {
         return b
     }
 
+    private func itemWidth(_ item: String) -> CGFloat { Settings.toolbarSlots(item) == 2 ? 64 : 30 }
+
     private func barItem(_ item: String) -> UIView {
         let v = EditorItemView()
         v.backgroundColor = theme.bg
         v.layer.cornerRadius = 8
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.widthAnchor.constraint(equalToConstant: item == "arrows" ? 46 : 34).isActive = true
+        v.widthAnchor.constraint(equalToConstant: itemWidth(item)).isActive = true
         v.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        let icon = iconView(item, size: 18, color: theme.text)
+        let icon = iconView(item, size: 17, color: theme.text)
         icon.translatesAutoresizingMaskIntoConstraints = false
         v.addSubview(icon)
         let minus = badge("minus", color: red)
@@ -202,7 +230,6 @@ final class ToolbarEditor: UIView {
         ])
         v.item = item
         v.accessibilityLabel = (ToolbarEditor.names[item] ?? item) + " · 빼려면 오른쪽 위 빼기"
-        // ⊖ 자리를 누르면 빼고, 꾹 눌러 끌면 옮긴다
         let tap = UITapGestureRecognizer(target: self, action: #selector(barItemTapped(_:)))
         let press = UILongPressGestureRecognizer(target: self, action: #selector(dragged(_:)))
         press.minimumPressDuration = 0.25
@@ -214,8 +241,11 @@ final class ToolbarEditor: UIView {
 
     private func tile(_ item: String) -> UIView {
         let on = isOn(item)
+        let available = on || fits(item)
+        let double = Settings.toolbarSlots(item) == 2
         let v = EditorItemView()
         v.item = item
+        v.alpha = available ? 1 : 0.4
         let box = UIView()
         box.layer.cornerRadius = 10
         box.backgroundColor = on ? blue.withAlphaComponent(0.13) : theme.bg
@@ -227,7 +257,7 @@ final class ToolbarEditor: UIView {
         let mark = badge(on ? "check" : "plus", color: on ? blue : theme.muted.withAlphaComponent(0.8))
         box.addSubview(mark)
         let name = UILabel()
-        name.text = ToolbarEditor.names[item]
+        name.text = (ToolbarEditor.names[item] ?? item) + (double ? " · 2칸" : "")
         name.font = .systemFont(ofSize: 11)
         name.textColor = on ? theme.text : theme.muted
         name.textAlignment = .center
@@ -239,7 +269,7 @@ final class ToolbarEditor: UIView {
         NSLayoutConstraint.activate([
             box.topAnchor.constraint(equalTo: v.topAnchor),
             box.centerXAnchor.constraint(equalTo: v.centerXAnchor),
-            box.widthAnchor.constraint(equalToConstant: 46),
+            box.widthAnchor.constraint(equalToConstant: double ? 100 : 46),
             box.heightAnchor.constraint(equalToConstant: 40),
             icon.centerXAnchor.constraint(equalTo: box.centerXAnchor),
             icon.centerYAnchor.constraint(equalTo: box.centerYAnchor),
@@ -251,7 +281,8 @@ final class ToolbarEditor: UIView {
             name.bottomAnchor.constraint(equalTo: v.bottomAnchor),
         ])
         v.isAccessibilityElement = true
-        v.accessibilityLabel = (ToolbarEditor.names[item] ?? item) + (on ? " · 상단바에 있음" : " · 넣기")
+        v.accessibilityLabel = (ToolbarEditor.names[item] ?? item)
+            + (on ? " · 상단바에 있음" : (available ? " · 넣기" : " · 칸이 모자람"))
         v.accessibilityTraits = .button
         let tap = UITapGestureRecognizer(target: self, action: #selector(tileTapped(_:)))
         let press = UILongPressGestureRecognizer(target: self, action: #selector(dragged(_:)))
@@ -264,7 +295,7 @@ final class ToolbarEditor: UIView {
 
     private func reload() {
         barStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        leftViews = []
+        barViews = []
         let lang = UILabel()
         lang.text = "한/영"
         lang.font = .boldSystemFont(ofSize: 12)
@@ -273,60 +304,82 @@ final class ToolbarEditor: UIView {
         lang.backgroundColor = theme.funcKey
         lang.layer.cornerRadius = 7
         lang.layer.masksToBounds = true
-        lang.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        lang.widthAnchor.constraint(equalToConstant: 38).isActive = true
         lang.heightAnchor.constraint(equalToConstant: 30).isActive = true
         barStack.addArrangedSubview(lang)
-        for item in left {
-            let v = barItem(item)
-            leftViews.append((item, v))
-            barStack.addArrangedSubview(v)
+        for item in layout {
+            if item == Settings.toolbarGap {
+                let spacer = UIView()
+                spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                barStack.addArrangedSubview(spacer)
+                barViews.append((item, spacer))
+            } else {
+                let v = barItem(item)
+                barViews.append((item, v))
+                barStack.addArrangedSubview(v)
+            }
         }
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        barStack.addArrangedSubview(spacer)
-        if arrowsOn { barStack.addArrangedSubview(barItem("arrows")) }
-        if hideOn { barStack.addArrangedSubview(barItem("hide")) }
 
-        gridStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for item in ToolbarEditor.allItems { gridStack.addArrangedSubview(tile(item)) }
+        let n = used
+        meterLabel.text = "\(n)/\(Settings.toolbarCapacity)칸"
+        meterLabel.textColor = n >= Settings.toolbarCapacity ? red : theme.muted
+
+        gridRows.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let row1 = UIStackView(arrangedSubviews: ToolbarEditor.singles.map { tile($0) })
+        let row2 = UIStackView(arrangedSubviews: ToolbarEditor.doubles.map { tile($0) })
+        for r in [row1, row2] {
+            r.axis = .horizontal
+            r.distribution = .fillEqually
+            r.alignment = .top
+            gridRows.addArrangedSubview(r)
+        }
     }
 
-    // MARK: 켜고 끄기
+    // MARK: 넣고 빼기
 
-    private func isOn(_ item: String) -> Bool {
-        switch item {
-        case "arrows": return arrowsOn
-        case "hide": return hideOn
-        default: return left.contains(item)
-        }
+    private func save() {
+        settings.toolbarLayout = layout
     }
 
-    private func set(_ item: String, on: Bool, at index: Int? = nil) {
-        switch item {
-        case "arrows": arrowsOn = on
-        case "hide": hideOn = on
-        default:
-            left.removeAll { $0 == item }
-            if on { left.insert(item, at: min(max(index ?? left.count, 0), left.count)) }
+    /// 칸이 모자라서 못 넣을 때: 칸 수를 빨갛게 흔든다
+    private func refuse() {
+        let a = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        a.values = [0, -6, 6, -4, 4, 0]
+        a.duration = 0.3
+        meterLabel.layer.add(a, forKey: "shake")
+        meterLabel.textColor = red
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
+
+    /// 넣기. at 은 layout 안의 자리 (없으면 가운데 빈 곳 바로 앞, 즉 왼쪽 묶음의 끝)
+    private func insert(_ item: String, at index: Int? = nil) {
+        let wasOn = isOn(item)
+        layout.removeAll { $0 == item }
+        if !wasOn && used + Settings.toolbarSlots(item) > Settings.toolbarCapacity {
+            refuse()
+            reload()
+            return
         }
+        let gapIndex = layout.firstIndex(of: Settings.toolbarGap) ?? layout.count
+        let i = min(max(index ?? gapIndex, 0), layout.count)
+        layout.insert(item, at: i)
         save()
         reload()
     }
 
-    private func save() {
-        let off = ToolbarEditor.leftItems.filter { !left.contains($0) }
-        settings.toolbarOrder = left + off
-        settings.toolbarOff = off
-        settings.showArrows = arrowsOn
-        settings.showHide = hideOn
+    private func remove(_ item: String) {
+        layout.removeAll { $0 == item }
+        save()
+        reload()
     }
 
     @objc private func barItemTapped(_ g: UITapGestureRecognizer) {
         guard let v = g.view as? EditorItemView else { return }
-        // ⊖ 근처(오른쪽 위 절반)를 누르면 뺀다. 가운데를 누르면 살짝 흔들어 끌 수 있다고 알려 준다.
+        // ⊖ 근처(오른쪽 위)를 누르면 뺀다. 가운데를 누르면 살짝 흔들어 끌 수 있다고 알려 준다.
         let p = g.location(in: v)
-        if p.x > v.bounds.width * 0.45 && p.y < v.bounds.height * 0.6 {
-            set(v.item, on: false)
+        if p.x > v.bounds.width - 22 && p.y < v.bounds.height * 0.6 {
+            remove(v.item)
         } else {
             let a = CAKeyframeAnimation(keyPath: "transform.rotation.z")
             a.values = [0, 0.08, -0.08, 0.05, 0]
@@ -337,7 +390,7 @@ final class ToolbarEditor: UIView {
 
     @objc private func tileTapped(_ g: UITapGestureRecognizer) {
         guard let v = g.view as? EditorItemView else { return }
-        set(v.item, on: !isOn(v.item))
+        if isOn(v.item) { remove(v.item) } else { insert(v.item) }
     }
 
     // MARK: 끌어서 옮기기
@@ -349,6 +402,11 @@ final class ToolbarEditor: UIView {
         case .began:
             dragItem = source.item
             dragFromBar = source.isDescendant(of: barCard)
+            if !dragFromBar && !isOn(source.item) && !fits(source.item) {
+                dragItem = nil
+                refuse()
+                return
+            }
             dragSource = source
             scroll.isScrollEnabled = false
             let snap = source.snapshotView(afterScreenUpdates: false) ?? UIView()
@@ -364,8 +422,10 @@ final class ToolbarEditor: UIView {
                 snap.center = p
             }
             source.alpha = 0.3
+            placeholderWidth?.constant = itemWidth(source.item)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .changed:
+            guard dragItem != nil else { return }
             ghost?.center = p
             updateDrop(at: p)
         case .ended:
@@ -381,18 +441,19 @@ final class ToolbarEditor: UIView {
     private func updateDrop(at p: CGPoint) {
         guard let item = dragItem else { return }
         let overBar = barFrame.insetBy(dx: 0, dy: -22).contains(p)
-        if overBar && ToolbarEditor.leftItems.contains(item) {
-            let others = leftViews.filter { $0.item != item }
+        if overBar {
+            // layout 안의 자리: 끄는 도구를 뺀 나머지(빈 곳 포함) 중 손가락보다 왼쪽에 있는 것의 수
+            let others = barViews.filter { $0.item != item }
             var index = 0
             for o in others where o.view.convert(o.view.bounds, to: self).midX < p.x { index += 1 }
             if dropIndex != index {
                 dropIndex = index
                 placeholder.removeFromSuperview()
                 if dragFromBar { dragSource?.isHidden = true }
-                // 0번은 한/영. 숨긴 원래 자리도 칸 수에 들어 있어서 보이는 칸 기준으로 넣는다.
-                let visible = barStack.arrangedSubviews.filter { !$0.isHidden }
-                let anchorIndex = 1 + index
-                let at = anchorIndex < visible.count ? (barStack.arrangedSubviews.firstIndex(of: visible[anchorIndex]) ?? barStack.arrangedSubviews.count) : barStack.arrangedSubviews.count
+                // 미리 보기에서 0번은 한/영. 보이는 것 기준으로 index 번째 앞에 넣는다.
+                let visible = barStack.arrangedSubviews.filter { !$0.isHidden && $0 !== placeholder }
+                let anchor = 1 + index
+                let at = anchor < visible.count ? (barStack.arrangedSubviews.firstIndex(of: visible[anchor]) ?? barStack.arrangedSubviews.count) : barStack.arrangedSubviews.count
                 barStack.insertArrangedSubview(placeholder, at: at)
                 UIView.animate(withDuration: 0.15) { self.barCard.layoutIfNeeded() }
             }
@@ -411,7 +472,6 @@ final class ToolbarEditor: UIView {
     private func finishDrag(at p: CGPoint, cancelled: Bool) {
         guard let item = dragItem else { return }
         let index = dropIndex
-        let overBar = barFrame.insetBy(dx: 0, dy: -22).contains(p)
         placeholder.removeFromSuperview()
         ghost?.removeFromSuperview()
         ghost = nil
@@ -423,11 +483,9 @@ final class ToolbarEditor: UIView {
         scroll.isScrollEnabled = true
         guard !cancelled else { reload(); return }
         if let i = index {
-            set(item, on: true, at: i)                       // 순서 바꾸기 또는 그 자리에 넣기
+            insert(item, at: i)                              // 자리 바꾸기 또는 그 자리에 넣기
         } else if dragFromBar && p.y > barFrame.maxY + 18 {
-            set(item, on: false)                             // 아래로 끌어내려 빼기
-        } else if !dragFromBar && overBar {
-            set(item, on: true)                              // 화살표·닫기는 오른쪽 끝에
+            remove(item)                                     // 아래로 끌어내려 빼기
         } else {
             reload()
         }

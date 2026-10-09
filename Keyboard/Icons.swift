@@ -86,6 +86,16 @@ enum Icon {
             p.addLine(to: CGPoint(x: 11, y: 21))
             stroke(p, line)
 
+        case "redo":
+            // 다시 하기: 되돌리기를 좌우로 뒤집은 모양
+            stroke(poly([(15, 14), (20, 9), (15, 4)]), line)
+            let p = UIBezierPath()
+            p.move(to: CGPoint(x: 20, y: 9))
+            p.addLine(to: CGPoint(x: 10, y: 9))
+            p.addArc(withCenter: CGPoint(x: 10, y: 15), radius: 6, startAngle: -.pi / 2, endAngle: .pi / 2, clockwise: false)
+            p.addLine(to: CGPoint(x: 13, y: 21))
+            stroke(p, line)
+
         case "slider.horizontal.3":
             stroke(poly([(4, 7), (14, 7)]), line)
             stroke(poly([(18, 7), (20, 7)]), line)

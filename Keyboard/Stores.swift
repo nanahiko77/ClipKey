@@ -133,7 +133,40 @@ final class Settings {
         set { d.set(newValue, forKey: "showHide") }
     }
 
+    // MARK: 상단바 배치 (8칸)
+
+    /// 상단바에 넣을 수 있는 모든 도구. 화살표와 되돌리기는 2칸.
+    static let toolbarAllItems = ["clipboard", "emoji", "settings", "addword", "hide", "arrows", "undo"]
+    static let toolbarCapacity = 8
+    static func toolbarSlots(_ item: String) -> Int { item == "arrows" || item == "undo" ? 2 : 1 }
+    /// 왼쪽 묶음과 오른쪽 묶음을 나누는 빈 곳 표시
+    static let toolbarGap = "gap"
+
+    /// 상단바 배치: 한/영 다음부터 순서대로, "gap" 앞은 왼쪽에 붙고 뒤는 오른쪽 끝에 붙는다
+    var toolbarLayout: [String] {
+        get {
+            if let saved = d.stringArray(forKey: "toolbarLayout") {
+                var seen = Set<String>()
+                var out: [String] = []
+                for i in saved where (Settings.toolbarAllItems.contains(i) || i == Settings.toolbarGap) && !seen.contains(i) {
+                    seen.insert(i)
+                    out.append(i)
+                }
+                if !out.contains(Settings.toolbarGap) { out.append(Settings.toolbarGap) }
+                return out
+            }
+            // 예전 설정에서 옮겨 온다 (켜 둔 왼쪽 도구 → 빈 곳 → 화살표 → 닫기)
+            var out = toolbarOrder.filter { !toolbarOff.contains($0) }
+            out.append(Settings.toolbarGap)
+            if showArrows { out.append("arrows") }
+            if showHide { out.append("hide") }
+            return out
+        }
+        set { d.set(newValue, forKey: "toolbarLayout") }
+    }
+
     func resetToolbar() {
+        d.removeObject(forKey: "toolbarLayout")
         d.removeObject(forKey: "toolbarOrder")
         d.removeObject(forKey: "toolbarOff")
         showArrows = true
