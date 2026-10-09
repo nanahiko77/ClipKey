@@ -515,6 +515,9 @@ final class WordStore {
 
     func isChosen(_ w: String) -> Bool { chosen.contains(w) }
 
+    /// 교정 후보로 쓸 내 단어 전부 (직접 넣은 단어, 자주 친 단어, 고른 단어)
+    var personal: [String] { list + chosen.filter { (counts[$0] ?? 0) < WordStore.threshold } }
+
     /// 배울 만한 단어인지: 숫자가 섞인 글자, 미완성 낱자, 한 글자짜리는 배우지 않는다.
     static func learnable(_ w: String) -> Bool {
         guard w.count >= 2, w.count <= 20 else { return false }

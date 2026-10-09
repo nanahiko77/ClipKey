@@ -34,6 +34,11 @@ struct HangulComposer {
     var cho: Character?
     var jung: [Character] = []
     var jong: [Character] = []
+    /// 받침이 못 돼서 방금 밀려난 앞 글자. 나랏글은 ㅎ·ㅈ·ㅌ 을 획추가로 만들기 때문에,
+    /// "찬" + ㅇ(→획추가 ㅎ) 처럼 바뀐 뒤에야 겹받침(ㄶ)이 되는 경우 앞 글자로 되돌려 붙인다.
+    private var prev: (cho: Character?, jung: [Character], jong: [Character])?
+    /// 앞 글자로 되돌려 붙였으면 true. 화면에서 앞 글자를 지우고 다시 그려야 한다.
+    var reclaimed = false
 
     var isEmpty: Bool { cho == nil && jung.isEmpty }
 
@@ -81,6 +86,7 @@ struct HangulComposer {
 
     /// 자음 입력. 확정되어 밀려난 글자를 돌려준다.
     mutating func addConsonant(_ c: Character) -> String {
+        prev = nil
         if jung.isEmpty {
             let out = cho == nil ? "" : flush()
             cho = c
@@ -95,13 +101,16 @@ struct HangulComposer {
             jong.append(c)
             return ""
         }
+        let saved = (cho: cho, jung: jung, jong: jong)
         let out = flush()
         cho = c
+        prev = saved
         return out
     }
 
     /// 모음 입력. 확정되어 밀려난 글자를 돌려준다.
     mutating func addVowel(_ v: Character) -> String {
+        prev = nil
         if !jong.isEmpty {
             let moved = jong.removeLast()      // 받침이 다음 글자의 초성으로 넘어간다
             let out = flush()
@@ -124,6 +133,7 @@ struct HangulComposer {
 
     /// 낱자 하나를 지운다. 지울 것이 없으면 false.
     mutating func backspace() -> Bool {
+        prev = nil
         if !jong.isEmpty { jong.removeLast(); return true }
         if !jung.isEmpty { jung.removeLast(); return true }
         if cho != nil { cho = nil; return true }
@@ -152,7 +162,18 @@ struct HangulComposer {
             if HangulComposer.jungChar(trial, nara: nara) != nil { jung = trial }
             return ""
         }
-        if let c = cho, let n = table[c] { cho = n }
+        if let c = cho, let n = table[c] {
+            cho = n
+            // 앞 글자 받침과 겹받침이 되면 앞 글자로 붙인다 (찬+ㅎ → 찮, 안+ㅈ → 앉, 알+ㅌ → 앑)
+            if jung.isEmpty, jong.isEmpty, let p = prev, p.cho != nil, !p.jung.isEmpty,
+               HangulComposer.jongChar(p.jong + [n]) != nil {
+                cho = p.cho
+                jung = p.jung
+                jong = p.jong + [n]
+                prev = nil
+                reclaimed = true
+            }
+        }
         return ""
     }
 

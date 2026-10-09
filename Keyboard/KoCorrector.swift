@@ -240,6 +240,36 @@ final class KoCorrector {
         return ranked()
     }
 
+    /// 내가 쓰는 말(직접 넣은 단어, 자주 친 단어, 고른 단어) 중 가까운 것.
+    /// 사전에 없는 합성어·이름도 한 번 쓰면 오타를 그 말로 고칠 수 있다 (슛자키 → 숫자키).
+    static func personal(_ word: String, words: [String], hangulLayout: Int) -> [Candidate] {
+        guard word.count >= 2, isHangulWord(word) else { return [] }
+        let keys = hangulLayout == 0 ? nara : dubeol
+        let hj = jamo(word)
+        let cut = hj.count <= 6 ? 1.0 : 1.5
+        var prev: [Double] = []
+        var cur: [Double] = []
+        var out: [Candidate] = []
+        for w in words where w != word && isHangulWord(w) {
+            let wj = jamo(w)
+            if abs(wj.count - hj.count) > 2 { continue }
+            let d = distance(hj, wj, cut: cut, keys: keys, prev: &prev, cur: &cur)
+            if d <= cut { out.append(Candidate(text: w, score: d - 0.3, sure: d <= 1.0)) }
+        }
+        return out.sorted { $0.score < $1.score }
+    }
+
+    /// 내 단어 후보를 앞에, 사전 후보를 뒤에 (같은 말은 한 번만)
+    static func merge(_ mine: [Candidate], _ dict: [Candidate]) -> [Candidate] {
+        var seen = Set<String>()
+        var out: [Candidate] = []
+        for c in (mine + dict).sorted(by: { $0.score < $1.score }) where !seen.contains(c.text) {
+            seen.insert(c.text)
+            out.append(c)
+        }
+        return Array(out.prefix(3))
+    }
+
     /// 사전을 새로 받았을 때 지난 결과를 버린다
     func reset() {
         cacheLock.lock()

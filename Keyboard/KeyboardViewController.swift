@@ -89,6 +89,8 @@ final class KeyboardViewController: UIInputViewController {
     let correctorGen = Generation()
     var koCache: [String: [KoCorrector.Candidate]] = [:]
     var koPending: String?
+    var koCheckerWorks: Bool?
+    var iosKnownCache: [String: Bool] = [:]
     var spaceRepeat = false            // 간격을 방금 연달아 눌렀는지
     var armedSuggestion: String?       // 길게 눌러 삭제 대기 중인 추천 단어
     var suggestArmTimer: Timer?
@@ -710,10 +712,12 @@ final class KeyboardViewController: UIInputViewController {
         case "stroke":
             composer.nara = true
             let out = composer.transformLast(HangulComposer.strokeTable)
+            reclaimIfNeeded()
             apply(commit: out)
         case "double":
             composer.nara = true
             let out = composer.transformLast(HangulComposer.doubleTable)
+            reclaimIfNeeded()
             apply(commit: out)
         case "v:ㅏㅓ":
             naraVowel(id, "ㅏ", "ㅓ")
@@ -786,6 +790,15 @@ final class KeyboardViewController: UIInputViewController {
             shift = .off
             updateLetterTitles()
         }
+    }
+
+    /// 획추가로 앞 글자 받침에 붙었으면(찬+ㅎ → 찮) 화면의 앞 글자와 조합 중 글자를 지운다.
+    /// 이어서 apply 가 새로 합친 글자를 넣는다.
+    func reclaimIfNeeded() {
+        guard composer.reclaimed else { return }
+        composer.reclaimed = false
+        clearComposingText()
+        docDelete()
     }
 
     /// 나랏글 모음 키: 같은 키를 다시 누르면 앞의 입력을 되돌리고 다른 모음을 넣는다
@@ -867,6 +880,8 @@ final class KeyboardViewController: UIInputViewController {
             return choice == word ? [] : [choice]
         }
         if lang == .english { return correction(for: word).map { [$0] } ?? [] }
+        // 우리 사전은 작아서 합성어(숫자키 같은)를 오타로 볼 수 있다. 아이폰 사전이 맞다고 하면 고치지 않는다.
+        if iosKnowsKorean(word) { return [] }
         return koCandidates(word).map { $0.text }
     }
 
@@ -879,11 +894,13 @@ final class KeyboardViewController: UIInputViewController {
         let layout = settings.hangulLayout
         let key = "\(layout)|\(word)"
         if let cached = koCache[key] { return cached }
+        let personal = words.personal
         if wait {
             correctorGen.bump()                    // 뒤에서 돌던 계산은 멈춘다
-            let r = correctorQueue.sync {
-                KoCorrector.shared.corrections(for: word, hangulLayout: layout, protected: { _ in false })
-            } ?? []
+            let r = correctorQueue.sync { () -> [KoCorrector.Candidate] in
+                let dict = KoCorrector.shared.corrections(for: word, hangulLayout: layout, protected: { _ in false }) ?? []
+                return KoCorrector.merge(KoCorrector.personal(word, words: personal, hangulLayout: layout), dict)
+            }
             storeKo(key, r)
             return r
         }
@@ -899,6 +916,7 @@ final class KeyboardViewController: UIInputViewController {
             }
             let r = KoCorrector.shared.corrections(for: word, hangulLayout: layout, protected: { _ in false },
                                                    shouldStop: { generation.current != gen })
+                .map { KoCorrector.merge(KoCorrector.personal(word, words: personal, hangulLayout: layout), $0) }
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if self.koPending == key { self.koPending = nil }
@@ -913,6 +931,27 @@ final class KeyboardViewController: UIInputViewController {
         return []
     }
 
+    /// 아이폰 맞춤법 검사기가 이 한글 단어를 맞다고 보는지.
+    /// 검사기가 한글을 제대로 못 보는 기기에서는 쓰지 않는다 (엉터리 말도 맞다고 하면 끈다).
+    func iosKnowsKorean(_ word: String) -> Bool {
+        guard let language = koLanguage, word.count >= 2 else { return false }
+        if koCheckerWorks == nil {
+            koCheckerWorks = iosMisspelled("뷁쉙궯", language)
+        }
+        guard koCheckerWorks == true else { return false }
+        if let cached = iosKnownCache[word] { return cached }
+        let known = !iosMisspelled(word, language)
+        if iosKnownCache.count > 200 { iosKnownCache.removeAll() }
+        iosKnownCache[word] = known
+        return known
+    }
+
+    func iosMisspelled(_ word: String, _ language: String) -> Bool {
+        let range = NSRange(location: 0, length: (word as NSString).length)
+        return checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false,
+                                             language: language).location != NSNotFound
+    }
+
     func storeKo(_ key: String, _ value: [KoCorrector.Candidate]) {
         if koCache.count > 64 { koCache.removeAll() }
         koCache[key] = value
@@ -925,6 +964,7 @@ final class KeyboardViewController: UIInputViewController {
         // 내가 쓰는 말(직접 넣은 단어, 자주 친 단어)을 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
         if !words.matches(word).isEmpty { return nil }
         if lang == .english { return correction(for: word) }
+        if iosKnowsKorean(word) { return nil }
         guard let best = koCandidates(word, wait: wait).first, best.sure else { return nil }
         return best.text
     }
