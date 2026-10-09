@@ -361,10 +361,17 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("보조키 표시 (꾹 눌러 숫자·기호)", toggle(settings.naraHints, tag: 10)),
             settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
             settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
+            settingHeader("입력"),
+            settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
+            sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
+                      min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1),
+            sliderRow("길게 누르기 시간", note: "보조 글자 말풍선과 반복 입력이 시작되는 시간 · 최소 0.3초",
+                      min: Float(Settings.longPressRange.lowerBound), max: Float(Settings.longPressRange.upperBound),
+                      value: Float(settings.longPressTime), low: "짧게", high: "길게", tag: 2),
             settingHeader("상단바"),
             settingRow("상단바 꾸미기", openToolbarEditButton()),
             settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
-            settingRow("학습한 단어", wordButtons),
+            settingRow("단어 관리", wordButtons),
             settingHeader("클립보드"),
             settingRow("기록 보관 개수", segment(["20", "50", "100"], selected: countIndex, tag: 2)),
             settingRow("사진도 저장 (최근 10장)", toggle(settings.savePhotos, tag: 16)),
@@ -427,6 +434,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 14: settings.showArrows = s.isOn
         case 15: settings.keySound = s.isOn
         case 16: settings.savePhotos = s.isOn
+        case 17: settings.repeatOnHold = s.isOn
         default: break
         }
     }
@@ -617,6 +625,69 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         }
     }
 
+    // MARK: 슬라이더
+
+    /// [제목 값 / 설명] 아래에 [낮음 ——●—— 높음]
+    func sliderRow(_ title: String, note: String, min: Float, max: Float, value: Float,
+                   low: String, high: String, tag: Int) -> UIView {
+        let t = UILabel()
+        t.text = title
+        t.font = .systemFont(ofSize: 15)
+        t.textColor = theme.text
+        t.setContentHuggingPriority(.required, for: .horizontal)
+        let v = valueLabel(sliderText(tag, value))
+        v.tag = 1000 + tag
+        let top = UIStackView(arrangedSubviews: [t, v, UIView()])
+        top.axis = .horizontal
+        top.alignment = .firstBaseline
+        top.spacing = 6
+        let n = UILabel()
+        n.text = note
+        n.font = .systemFont(ofSize: 12)
+        n.textColor = theme.muted
+        n.adjustsFontSizeToFitWidth = true
+        n.minimumScaleFactor = 0.8
+        let lo = UILabel()
+        lo.text = low
+        let hi = UILabel()
+        hi.text = high
+        for l in [lo, hi] {
+            l.font = .systemFont(ofSize: 12)
+            l.textColor = theme.muted
+            l.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        let slider = UISlider()
+        slider.minimumValue = min
+        slider.maximumValue = max
+        slider.value = value
+        slider.tag = tag
+        slider.minimumTrackTintColor = theme.accent
+        slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
+        let line = UIStackView(arrangedSubviews: [lo, slider, hi])
+        line.axis = .horizontal
+        line.alignment = .center
+        line.spacing = 10
+        let col = UIStackView(arrangedSubviews: [top, n, line])
+        col.axis = .vertical
+        col.spacing = 4
+        return col
+    }
+
+    func sliderText(_ tag: Int, _ value: Float) -> String {
+        tag == 1 ? "\(Int(value.rounded()))" : String(format: "%.2f초", Double(value))
+    }
+
+    @objc func sliderChanged(_ s: UISlider) {
+        if s.tag == 1 {
+            s.value = s.value.rounded()                       // 0~9 한 칸씩
+            settings.repeatSpeed = Int(s.value)
+        } else {
+            s.value = (s.value / 0.05).rounded() * 0.05       // 0.05초 단위
+            settings.longPressTime = Double(s.value)
+        }
+        (s.superview?.superview?.viewWithTag(1000 + s.tag) as? UILabel)?.text = sliderText(s.tag, s.value)
+    }
+
     // MARK: 상단바 꾸미기
 
     func openToolbarEditButton() -> UIButton {
@@ -655,62 +726,124 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
     // MARK: - 학습한 단어 패널
 
+    /// 단어 관리: 위에 직접 넣은 단어(★), 아래에 자주 친 단어(횟수, ☆ 로 위로 옮기기)
     func buildWords() {
-        wordList = words.list
+        let manual = words.manualWords
+        let learned = words.learnedWords
+        wordList = manual + learned.map { $0.word }
         if wordList.isEmpty {
-            pinEdges(emptyLabel("아직 학습한 단어가 없습니다.\n같은 단어를 두 번 이상 치면 여기에 나옵니다."),
+            pinEdges(emptyLabel("아직 단어가 없습니다.\n'단어 추가'로 넣거나, 같은 단어를 다섯 번 이상 치면 여기에 나옵니다."),
                      in: keyArea, insets: UIEdgeInsets(top: 0, left: 24, bottom: 0, right: 24))
             return
         }
-
         let scroll = UIScrollView()
         pinEdges(scroll, in: keyArea)
-
         let full = keyArea.bounds.width > 0 ? keyArea.bounds.width : UIScreen.main.bounds.width
         let left: CGFloat = 8
         let right = full - 8
+        var y: CGFloat = 6
 
-        let info = UILabel(frame: CGRect(x: left, y: 8, width: right - left, height: 16))
-        info.text = "자주 친 순서입니다. × 를 누르면 그 단어만 지웁니다."
-        info.font = .systemFont(ofSize: 12)
-        info.textColor = theme.muted
-        scroll.addSubview(info)
-
-        var x = left
-        var y: CGFloat = 32
-        for (i, word) in wordList.enumerated() {
-            let label = UILabel()
-            label.text = word
-            label.font = .systemFont(ofSize: 15)
-            label.textColor = theme.text
-            label.sizeToFit()
-            let textWidth = min(label.bounds.width, right - left - 50)
-            let chipWidth = 12 + textWidth + 6 + 28 + 4
-            if x + chipWidth > right, x > left {
-                x = left
-                y += 42
-            }
-            let chip = UIView(frame: CGRect(x: x, y: y, width: chipWidth, height: 36))
-            chip.backgroundColor = theme.row
-            chip.layer.cornerRadius = 18
-            label.frame = CGRect(x: 12, y: 0, width: textWidth, height: 36)
-            chip.addSubview(label)
-
-            let del = UIButton(type: .system)
-            del.frame = CGRect(x: chipWidth - 32, y: 4, width: 28, height: 28)
-            del.setImage(Icon.image("xmark", size: 14, line: 2.5), for: .normal)
-            del.tintColor = theme.text
-            del.backgroundColor = theme.bg
-            del.layer.cornerRadius = 14
-            del.tag = i
-            del.accessibilityLabel = "이 단어 지우기"
-            del.addTarget(self, action: #selector(wordDeleteTapped(_:)), for: .touchUpInside)
-            chip.addSubview(del)
-
-            scroll.addSubview(chip)
-            x += chipWidth + 6
+        func header(_ title: String, _ note: String) {
+            let l = UILabel(frame: CGRect(x: left + 2, y: y, width: right - left, height: 20))
+            let s = NSMutableAttributedString(string: title, attributes: [.font: UIFont.boldSystemFont(ofSize: 14), .foregroundColor: theme.text])
+            s.append(NSAttributedString(string: "  " + note, attributes: [.font: UIFont.systemFont(ofSize: 12), .foregroundColor: theme.muted]))
+            l.attributedText = s
+            scroll.addSubview(l)
+            y += 26
         }
-        scroll.contentSize = CGSize(width: full, height: y + 44)
+
+        func chips(_ items: [(word: String, count: Int?)], startIndex: Int, manual: Bool) {
+            var x = left
+            for (offset, item) in items.enumerated() {
+                let index = startIndex + offset
+                let label = UILabel()
+                label.text = item.word
+                label.font = .systemFont(ofSize: 15)
+                label.textColor = theme.text
+                label.sizeToFit()
+                var extra: CGFloat = 0
+                let countLabel = UILabel()
+                if let c = item.count {
+                    countLabel.text = "\(c)회"
+                    countLabel.font = .systemFont(ofSize: 11)
+                    countLabel.textColor = theme.muted
+                    countLabel.sizeToFit()
+                    extra += countLabel.bounds.width + 5
+                }
+                let starW: CGFloat = manual ? 18 : 0
+                let promoteW: CGFloat = manual ? 0 : 32
+                let textWidth = min(label.bounds.width, right - left - 90)
+                let chipWidth = 10 + starW + textWidth + extra + 6 + promoteW + 32
+                if x + chipWidth > right, x > left {
+                    x = left
+                    y += 42
+                }
+                let chip = UIView(frame: CGRect(x: x, y: y, width: chipWidth, height: 36))
+                chip.backgroundColor = theme.row
+                chip.layer.cornerRadius = 18
+                var cx: CGFloat = 10
+                if manual {
+                    let star = UIImageView(image: Icon.image("star", size: 13))
+                    star.tintColor = theme.muted
+                    star.frame = CGRect(x: cx, y: 11.5, width: 13, height: 13)
+                    chip.addSubview(star)
+                    cx += starW
+                }
+                label.frame = CGRect(x: cx, y: 0, width: textWidth, height: 36)
+                chip.addSubview(label)
+                cx += textWidth + 5
+                if item.count != nil {
+                    countLabel.frame = CGRect(x: cx, y: 0, width: countLabel.bounds.width, height: 36)
+                    chip.addSubview(countLabel)
+                }
+                if !manual {
+                    let up = UIButton(type: .system)
+                    up.frame = CGRect(x: chipWidth - 64, y: 4, width: 28, height: 28)
+                    up.setImage(Icon.image("star.outline", size: 14, line: 2), for: .normal)
+                    up.tintColor = theme.muted
+                    up.backgroundColor = theme.bg
+                    up.layer.cornerRadius = 14
+                    up.tag = index
+                    up.accessibilityLabel = "직접 넣은 단어로 옮기기"
+                    up.addTarget(self, action: #selector(wordPromoteTapped(_:)), for: .touchUpInside)
+                    chip.addSubview(up)
+                }
+                let del = UIButton(type: .system)
+                del.frame = CGRect(x: chipWidth - 32, y: 4, width: 28, height: 28)
+                del.setImage(Icon.image("xmark", size: 14, line: 2.5), for: .normal)
+                del.tintColor = theme.text
+                del.backgroundColor = theme.bg
+                del.layer.cornerRadius = 14
+                del.tag = index
+                del.accessibilityLabel = "이 단어 지우기"
+                del.addTarget(self, action: #selector(wordDeleteTapped(_:)), for: .touchUpInside)
+                chip.addSubview(del)
+                scroll.addSubview(chip)
+                x += chipWidth + 6
+            }
+            y += 48
+        }
+
+        header("직접 넣은 단어", "\(manual.count)개 · 늘 맨 먼저 추천")
+        if manual.isEmpty {
+            let l = UILabel(frame: CGRect(x: left + 2, y: y, width: right - left, height: 20))
+            l.text = "상단바의 + 나 '단어 추가'로 넣을 수 있습니다."
+            l.font = .systemFont(ofSize: 13)
+            l.textColor = theme.muted
+            scroll.addSubview(l)
+            y += 30
+        } else {
+            chips(manual.map { ($0, nil) }, startIndex: 0, manual: true)
+        }
+        header("자주 친 단어", "\(learned.count)개 · ☆ 를 누르면 위로 옮김")
+        chips(learned.map { ($0.word, Optional($0.count)) }, startIndex: manual.count, manual: false)
+        scroll.contentSize = CGSize(width: full, height: y + 8)
+    }
+
+    @objc func wordPromoteTapped(_ sender: UIButton) {
+        guard sender.tag < wordList.count else { return }
+        words.addManual(wordList[sender.tag])
+        buildBody()
     }
 
     @objc func wordDeleteTapped(_ sender: UIButton) {

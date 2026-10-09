@@ -11,8 +11,31 @@ final class Settings {
 
     private init() {
         d.register(defaults: ["naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
-                              "showHide": true])
+                              "showHide": true, "repeatOnHold": true, "repeatSpeed": 5, "longPressTime": 0.35])
     }
+
+    // MARK: 입력
+
+    /// 보조 글자가 없는 키를 누르고 있으면 반복 입력
+    var repeatOnHold: Bool {
+        get { d.bool(forKey: "repeatOnHold") }
+        set { d.set(newValue, forKey: "repeatOnHold") }
+    }
+    /// 반복 입력 속도 0(느리게) ~ 9(빠르게). 지우기 키의 연속 삭제도 이 속도를 쓴다.
+    var repeatSpeed: Int {
+        get { min(max(d.integer(forKey: "repeatSpeed"), 0), 9) }
+        set { d.set(min(max(newValue, 0), 9), forKey: "repeatSpeed") }
+    }
+    /// 반복 간격(초). 5 일 때 예전과 같은 0.09초.
+    var repeatInterval: TimeInterval { 0.15 - Double(repeatSpeed) * 0.012 }
+    /// 길게 누르기로 보는 시간(초). 그냥 누른 것과 헷갈리지 않도록 0.3초 아래로는 내리지 않는다.
+    static let longPressRange: ClosedRange<Double> = 0.3...0.8
+    var longPressTime: Double {
+        get { min(max(d.double(forKey: "longPressTime"), Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound) }
+        set { d.set(min(max(newValue, Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound), forKey: "longPressTime") }
+    }
+    /// 전체 삭제 같은 큰 말풍선: 반복 삭제가 먼저 시작되도록 길게 누르기 + 0.3초, 최소 0.6초
+    var altDelay: Double { max(0.6, longPressTime + 0.3) }
 
     // MARK: 상단바 꾸미기
 
@@ -457,6 +480,18 @@ final class WordStore {
             .map { $0.key }
         cachedList = l
         return l
+    }
+
+    /// 직접 넣은 단어 (가나다순)
+    var manualWords: [String] {
+        counts.filter { $0.value >= WordStore.manualCount }.map { $0.key }.sorted()
+    }
+
+    /// 자주 친 단어와 친 횟수 (많이 친 순서)
+    var learnedWords: [(word: String, count: Int)] {
+        counts.filter { $0.value >= WordStore.threshold && $0.value < WordStore.manualCount }
+            .sorted { a, b in a.value != b.value ? a.value > b.value : a.key < b.key }
+            .map { ($0.key, $0.value) }
     }
 
     func matches(_ query: String) -> [String] {

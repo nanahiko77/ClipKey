@@ -59,6 +59,9 @@ final class KeyboardViewController: UIInputViewController {
     static let suggestBarFull: CGFloat = 38
     /// 상단바에서 단어 추가를 열었으면 저장·취소 뒤 글자 자판으로 돌아간다
     var addReturnPanel: Panel?
+    // 밀어서 연속 입력 중인 키
+    weak var slideCurrent: KeyButton?
+    var sliding = false
     var toolbarEditList: ToolbarEditList?
     let divider = UIView()
     let keyArea = KeyArea()
@@ -669,15 +672,20 @@ final class KeyboardViewController: UIInputViewController {
         refreshSuggestions()
     }
 
+    /// 누르는 순간 한 글자, 길게 누르기 시간 + 0.1초 뒤부터 반복 입력 속도로 계속 지운다
     func startDelete() {
         backspaceOnce()
-        deleteTicks = 0
         deleteTimer?.invalidate()
-        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.09, repeats: true) { [weak self] _ in
+        let interval = settings.repeatInterval
+        let first = Timer(timeInterval: settings.longPressTime + 0.1, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            self.deleteTicks += 1
-            if self.deleteTicks > 4 { self.backspaceOnce() }
+            self.backspaceOnce()
+            let again = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.backspaceOnce() }
+            RunLoop.main.add(again, forMode: .common)
+            self.deleteTimer = again
         }
+        RunLoop.main.add(first, forMode: .common)
+        deleteTimer = first
     }
 
     /// 지우기 키를 왼쪽으로 밀었을 때: 커서 앞 단어 n개를 지운다. 띄어쓰기와 줄바꿈은 단어에 붙여 같이 지운다.

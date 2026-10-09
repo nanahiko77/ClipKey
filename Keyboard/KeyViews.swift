@@ -32,6 +32,16 @@ final class KeyArea: UIView {
         return hit
     }
 
+    /// 이 위치(keyArea 좌표)의 키. inner 만큼 가장자리를 빼고 본다 (밀어서 입력할 때 옆 키 안쪽까지 들어가야 바뀌도록)
+    func key(at point: CGPoint, inner: CGFloat) -> KeyButton? {
+        if keys == nil { keys = KeyArea.collect(self) }
+        for k in keys ?? [] where !k.isHidden && k.superview != nil {
+            let f = k.convert(k.bounds, to: self)
+            if f.insetBy(dx: f.width * inner, dy: f.height * inner).contains(point) { return k }
+        }
+        return nil
+    }
+
     private static func collect(_ v: UIView) -> [KeyButton] {
         v.subviews.flatMap { sub -> [KeyButton] in
             if let k = sub as? KeyButton { return [k] }
@@ -70,6 +80,22 @@ final class KeyButton: UIButton {
     var onSwipeChange: ((Int) -> Void)?
     var onSwipeCommit: ((Int) -> Void)?
     static let swipeStart: CGFloat = 24
+
+    /// 길게 눌렀을 때 보조 글자 말풍선이 뜨는 시간, 전체 삭제 같은 큰 말풍선이 뜨는 시간
+    var holdDelay: TimeInterval = 0.35
+    var altDelay: TimeInterval = 0.6
+
+    /// 누르고 있으면 반복 입력 (보조 글자·큰 말풍선이 없는 키에서만)
+    var onRepeat: (() -> Void)?
+    var repeatDelay: TimeInterval = 0.35
+    var repeatInterval: TimeInterval = 0.09
+    private var repeatTimer: Timer?
+    private var repeated = false
+
+    /// 밀어서 연속 입력: 손가락이 움직일 때마다 불린다. 다른 키로 넘어가 입력했으면 true.
+    var slideEnabled = false
+    var onSlide: ((UITouch) -> Bool)?
+    private var slid = false
 
     private let hintLabel = UILabel()
     private var startX: CGFloat = 0
@@ -111,23 +137,51 @@ final class KeyButton: UIButton {
     }
 
     @objc private func didTouchDown() {
+        repeated = false
+        slid = false
         onDown?()
         if altTitle != nil {
             altTimer?.invalidate()
-            let a = Timer(timeInterval: 0.6, repeats: false) { [weak self] _ in self?.showAlt() }
+            let a = Timer(timeInterval: altDelay, repeats: false) { [weak self] _ in self?.showAlt() }
             RunLoop.main.add(a, forMode: .common)
             altTimer = a
         }
+        if onRepeat != nil, hintText == nil, altTitle == nil { startRepeat() }
         guard hintText != nil else { return }
         holdTimer?.invalidate()
-        let t = Timer(timeInterval: 0.35, repeats: false) { [weak self] _ in self?.showBubble() }
+        let t = Timer(timeInterval: holdDelay, repeats: false) { [weak self] _ in self?.showBubble() }
         RunLoop.main.add(t, forMode: .common)
         holdTimer = t
+    }
+
+    private func startRepeat() {
+        stopRepeat()
+        let first = Timer(timeInterval: repeatDelay, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            self.repeated = true
+            self.onRepeat?()
+            let again = Timer(timeInterval: self.repeatInterval, repeats: true) { [weak self] _ in self?.onRepeat?() }
+            RunLoop.main.add(again, forMode: .common)
+            self.repeatTimer = again
+        }
+        RunLoop.main.add(first, forMode: .common)
+        repeatTimer = first
+    }
+
+    private func stopRepeat() {
+        repeatTimer?.invalidate()
+        repeatTimer = nil
     }
 
     @objc private func didTouchUp() {
         holdTimer?.invalidate()
         holdTimer = nil
+        stopRepeat()
+        // 밀어서 입력했거나 반복 입력했으면 뗄 때 한 번 더 넣지 않는다
+        if slid || repeated {
+            onUp?()
+            return
+        }
         if let n = endSwipe() {
             onUp?()
             onSwipeCommit?(n)
@@ -149,7 +203,12 @@ final class KeyButton: UIButton {
     @objc private func didTouchCancel() {
         holdTimer?.invalidate()
         holdTimer = nil
+        stopRepeat()
         hideBubble()
+        if slid {
+            onUp?()
+            return
+        }
         if let n = endSwipe() {
             // 밀어서 키 밖으로 나가도 단어 삭제는 그대로 한다
             onUp?()
@@ -170,6 +229,14 @@ final class KeyButton: UIButton {
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let result = super.continueTracking(touch, with: event)
         trackSwipe(touch)
+        if slideEnabled, bubble == nil, altBubble == nil, let slide = onSlide, slide(touch) {
+            if !slid {
+                slid = true
+                holdTimer?.invalidate()
+                holdTimer = nil
+                stopRepeat()
+            }
+        }
         if let b = altBubble, let host = bubbleHost {
             let inside = b.frame.insetBy(dx: -12, dy: -12).contains(touch.location(in: host))
             if inside != altHover {

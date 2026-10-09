@@ -165,7 +165,7 @@ extension KeyboardViewController {
         case .words:
             toolbar.addArrangedSubview(toolButton(symbol: "chevron.left", width: 44,
                                                   label: "설정으로 돌아가기", action: #selector(openSettings)))
-            toolbar.addArrangedSubview(toolbarTitle("학습한 단어"))
+            toolbar.addArrangedSubview(toolbarTitle("단어 관리"))
             let clear = toolButton("모두 지우기", plain: true, color: theme.danger, action: #selector(clearWordsTapped(_:)))
             clear.titleLabel?.font = .boldSystemFont(ofSize: 14)
             toolbar.addArrangedSubview(clear)
@@ -218,10 +218,50 @@ extension KeyboardViewController {
         k.bubbleHost = view
     }
 
+    /// 밀어서 연속 입력·반복 입력에서 빼는 키 (각자 다른 동작이 있거나, 실수로 눌리면 곤란한 키)
+    static let noSlideKeys: Set<String> = ["space", "return", "shift", "num", "punct", "stroke", "double", "⌫", "sympage"]
+
     func wire(_ k: KeyButton) {
-        k.onDown = { [weak self] in self?.haptic() }
+        k.onDown = { [weak self] in
+            self?.haptic()
+            self?.slideCurrent = nil
+            self?.sliding = false
+        }
         k.onTap = { [weak self] key in self?.handleKey(key.id) }
         k.onHint = { [weak self] s in self?.insertPlain(s) }
+        k.holdDelay = settings.longPressTime
+        k.altDelay = settings.altDelay
+        guard !KeyboardViewController.noSlideKeys.contains(k.id) else { return }
+        // 글자·숫자 키: 밀어서 연속 입력은 늘, 길게 누르면 반복은 설정에 따라 (보조 글자가 있는 키는 말풍선이 먼저)
+        k.slideEnabled = true
+        k.onSlide = { [weak self, weak k] touch in
+            guard let self = self, let k = k else { return false }
+            return self.slideTouch(touch, from: k)
+        }
+        if settings.repeatOnHold {
+            k.repeatDelay = settings.longPressTime
+            k.repeatInterval = settings.repeatInterval
+            k.onRepeat = { [weak self, weak k] in
+                guard let self = self, let k = k else { return }
+                self.haptic()
+                self.handleKey(k.id)
+            }
+        }
+    }
+
+    /// 밀어서 연속 입력: 옆 키의 안쪽까지 들어가면 그 키를 넣는다. 처음 넘어갈 때 시작한 키도 넣는다.
+    func slideTouch(_ touch: UITouch, from origin: KeyButton) -> Bool {
+        let p = touch.location(in: keyArea)
+        guard let target = keyArea.key(at: p, inner: 0.22), target.slideEnabled,
+              target !== (slideCurrent ?? origin) else { return sliding }
+        if !sliding {
+            sliding = true
+            handleKey(origin.id)
+        }
+        slideCurrent = target
+        haptic()
+        handleKey(target.id)
+        return true
     }
 
     func makeKey(_ title: String, id: String? = nil, hint: String? = nil, fn: Bool = false,
@@ -384,8 +424,8 @@ extension KeyboardViewController {
         let row2 = hstack([jamo("ㄹ", "ㄹ", "4"), jamo("ㅁ", "ㅁ", "5"), jamo("ㅗ ㅜ", "v:ㅗㅜ", "6"),
                            rounded(spaceKey())], spacing: 6)
         // 문장부호 키를 반으로 나눠 옆에 123 을 둔다
-        let punctAndNum = hstack([rounded(makeKey(".,?!", id: "punct", fn: true, font: 15)),
-                                  rounded(numKey("123"))], spacing: 5)
+        let punctAndNum = hstack([rounded(numKey("123")),
+                                  rounded(makeKey(".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
         let row3 = hstack([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9"),
                            punctAndNum], spacing: 6)
         let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
