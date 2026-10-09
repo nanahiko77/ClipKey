@@ -111,6 +111,12 @@ enum Icon {
         case "chevron.left":
             stroke(poly([(15, 5), (8, 12), (15, 19)]), line)
 
+        case "chevron.up":
+            stroke(poly([(5, 15), (12, 8), (19, 15)]), line)
+
+        case "chevron.down":
+            stroke(poly([(5, 9), (12, 16), (19, 9)]), line)
+
         case "chevron.right":
             stroke(poly([(9, 5), (16, 12), (9, 19)]), line)
 

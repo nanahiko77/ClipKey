@@ -56,6 +56,8 @@ final class KeyboardViewController: UIInputViewController {
     var pickerPack: UUID?
     weak var pickerAddButton: UIButton?
     weak var pickerView: UIView?
+    var previewSticker: String?
+    var toolbarHeight: NSLayoutConstraint?
     /// 추천 줄 자리에 대신 올리는 것 (단어 추가 입력 칸, 이모지 패널 탭)
     let barOverlay = UIView()
     lazy var koLanguage: String? = UITextChecker.availableLanguages.first { $0.hasPrefix("ko") }
@@ -219,7 +221,7 @@ final class KeyboardViewController: UIInputViewController {
             toolbar.topAnchor.constraint(equalTo: suggestBar.bottomAnchor),
             toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 46),
+            toolbarHeightConstraint(),
             divider.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -237,6 +239,12 @@ final class KeyboardViewController: UIInputViewController {
         loadTextReplacements()
         _ = checkField()
         rebuild()
+    }
+
+    func toolbarHeightConstraint() -> NSLayoutConstraint {
+        let c = toolbar.heightAnchor.constraint(equalToConstant: 46)
+        toolbarHeight = c
+        return c
     }
 
     /// 아이폰 텍스트 대치 목록을 받아 둔다 (연락처 이름처럼 그대로인 항목은 뺀다)
@@ -405,6 +413,9 @@ final class KeyboardViewController: UIInputViewController {
         let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
         suggestBar.isHidden = !showBar
         suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
+        // 추천 줄이 없는 화면(클립보드, 설정 …)은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
+        toolbar.layoutMargins.top = showBar ? 2 : 10
+        toolbarHeight?.constant = showBar ? 46 : 54
         barOverlay.subviews.forEach { $0.removeFromSuperview() }
         barOverlay.isHidden = true
         suggestScroll.isHidden = false
@@ -1305,6 +1316,42 @@ final class KeyboardViewController: UIInputViewController {
     @objc func hideKeyboard() {
         resetComposer()
         dismissKeyboard()
+    }
+
+    /// 커서를 줄 단위로 옮긴다 (줄바꿈 기준). 같은 칸 위치를 지키고, 그 줄이 짧으면 줄 끝으로.
+    /// 위에 줄이 없으면 맨 앞으로, 아래에 줄이 없으면 맨 끝으로.
+    func moveCursorLines(_ lines: Int) {
+        resetComposer()
+        let proxy = textDocumentProxy
+        for _ in 0..<abs(lines) {
+            let before = proxy.documentContextBeforeInput ?? ""
+            let after = proxy.documentContextAfterInput ?? ""
+            let col = before.count - (before.lastIndex(of: "\n").map { before.distance(from: before.startIndex, to: $0) + 1 } ?? 0)
+            var offset = 0
+            if lines < 0 {
+                let head = String(before.dropLast(col))           // 이 줄 앞까지 (끝이 줄바꿈)
+                if head.isEmpty {
+                    offset = -col                                 // 첫 줄: 맨 앞으로
+                } else {
+                    let prev = head.dropLast()                     // 앞 줄 (줄바꿈 뺌)
+                    let prevLen = prev.count - (prev.lastIndex(of: "\n").map { prev.distance(from: prev.startIndex, to: $0) + 1 } ?? 0)
+                    offset = -(col + 1 + max(prevLen - col, 0))
+                }
+            } else {
+                guard let nl = after.firstIndex(of: "\n") else {
+                    offset = after.count                           // 마지막 줄: 맨 끝으로
+                    proxy.adjustTextPosition(byCharacterOffset: offset)
+                    ctxCache = nil
+                    break
+                }
+                let rest = after.distance(from: after.startIndex, to: nl)
+                let next = after[after.index(after: nl)...]
+                let nextLen = next.firstIndex(of: "\n").map { next.distance(from: next.startIndex, to: $0) } ?? next.count
+                offset = rest + 1 + min(col, nextLen)
+            }
+            if offset != 0 { proxy.adjustTextPosition(byCharacterOffset: offset) }
+            ctxCache = nil
+        }
     }
 
     @objc func cursorLeft() {

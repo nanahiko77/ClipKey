@@ -7,6 +7,8 @@ final class GridCell: UICollectionViewCell {
     let imageView = UIImageView()
     let check = UIImageView()
     let ring = UIView()
+    let deleteButton = UIButton(type: .custom)
+    var onDelete: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -21,7 +23,14 @@ final class GridCell: UICollectionViewCell {
         check.contentMode = .center
         check.layer.cornerRadius = 10
         check.clipsToBounds = true
-        for v in [label, imageView, ring, check] as [UIView] {
+        deleteButton.setImage(Icon.image("xmark", size: 10, line: 3), for: .normal)
+        deleteButton.tintColor = .white
+        deleteButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        deleteButton.layer.cornerRadius = 10
+        deleteButton.accessibilityLabel = "빼기"
+        deleteButton.isHidden = true
+        deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
+        for v in [label, imageView, ring, check, deleteButton] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(v)
         }
@@ -42,10 +51,16 @@ final class GridCell: UICollectionViewCell {
             check.heightAnchor.constraint(equalToConstant: 20),
             check.topAnchor.constraint(equalTo: imageView.topAnchor, constant: 4),
             check.trailingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: -4),
+            deleteButton.widthAnchor.constraint(equalToConstant: 20),
+            deleteButton.heightAnchor.constraint(equalToConstant: 20),
+            deleteButton.topAnchor.constraint(equalTo: imageView.topAnchor, constant: -2),
+            deleteButton.trailingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 2),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func deleteTapped() { onDelete?() }
 }
 
 /// 이모지·스티커를 칸에 나눠 보여 준다. 사진 고르기에서는 여러 개를 선택할 수 있다.
@@ -65,6 +80,8 @@ final class GridPanel: NSObject, UICollectionViewDataSource, UICollectionViewDel
     var onPick: ((Int) -> Void)?
     var onLongPress: ((Int) -> Void)?
     var onSelectionChange: (() -> Void)?
+    /// 칸 오른쪽 위에 × 를 보이고, 누르면 부른다
+    var onDelete: ((Int) -> Void)?
 
     init(items: [Item], columns: Int, rowHeight: CGFloat, theme: Theme) {
         self.items = items
@@ -111,6 +128,9 @@ final class GridPanel: NSObject, UICollectionViewDataSource, UICollectionViewDel
         c.check.image = on ? Icon.image("check", size: 13, line: 3) : nil
         c.check.layer.borderWidth = on ? 0 : 2
         c.check.layer.borderColor = theme.funcKey.cgColor
+        c.deleteButton.isHidden = onDelete == nil
+        let item = indexPath.item
+        c.onDelete = { [weak self] in self?.onDelete?(item) }
         return c
     }
 
@@ -155,7 +175,7 @@ extension KeyboardViewController {
         barOverlay.addSubview(seg)
         NSLayoutConstraint.activate([
             seg.centerXAnchor.constraint(equalTo: barOverlay.centerXAnchor),
-            seg.centerYAnchor.constraint(equalTo: barOverlay.centerYAnchor, constant: 2),
+            seg.centerYAnchor.constraint(equalTo: barOverlay.centerYAnchor, constant: 4),
             seg.widthAnchor.constraint(equalToConstant: 252),
             seg.heightAnchor.constraint(equalToConstant: 28),
         ])
@@ -279,16 +299,20 @@ extension KeyboardViewController {
                 gridView = emptyLabel("클립보드에 저장된 사진으로 스티커 팩을 만들 수 있어요.\n위의 [+ 추가]를 누르세요. 누르면 복사되고, 입력 칸에 붙여넣어 보냅니다.")
             } else {
                 let pack = packs[min(stickerPack, packs.count - 1)]
-                title.text = "\(pack.name) · \(pack.items.count)개 · 누르면 복사, 길게 누르면 빼기"
+                title.text = "\(pack.name) · \(pack.items.count)개 · 누르면 복사 · 길게 누르면 크게 보기"
                 let names = pack.items
                 let grid = GridPanel(items: names.map { GridPanel.Item.image(self.stickers.thumbURL($0)) }, columns: 5, rowHeight: 70, theme: theme)
                 grid.onPick = { [weak self] i in
                     guard let self = self, i < names.count else { return }
                     self.copySticker(names[i])
                 }
-                grid.onLongPress = { [weak self] i in
+                grid.onDelete = { [weak self] i in
                     guard let self = self, i < names.count else { return }
                     self.removeSticker(names[i])
+                }
+                grid.onLongPress = { [weak self] i in
+                    guard let self = self, i < names.count else { return }
+                    self.showStickerPreview(names[i])
                 }
                 emojiGrid = grid
                 gridView = grid.view
@@ -332,6 +356,34 @@ extension KeyboardViewController {
         pb.setData(data, forPasteboardType: "public.jpeg")
         lastChangeCount = pb.changeCount       // 우리가 넣은 것을 새 복사로 다시 저장하지 않게
         showToast("복사했어요 · 입력 칸을 꾹 눌러 붙여넣으세요")
+    }
+
+    /// 스티커 크게 보기: [닫기] [복사]
+    func showStickerPreview(_ name: String) {
+        pickerView?.removeFromSuperview()
+        guard let img = UIImage(contentsOfFile: stickers.fileURL(name).path) else { return }
+        haptic()
+        let cover = UIView()
+        cover.backgroundColor = theme.bg
+        pinEdges(cover, in: keyArea)
+        pickerView = cover
+        let imageView = UIImageView(image: img)
+        imageView.contentMode = .scaleAspectFit
+        imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        imageView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        let close = toolButton("닫기", action: #selector(closeStickerPicker))
+        let copy = toolButton("복사", active: true, action: #selector(copyPreviewSticker))
+        previewSticker = name
+        let stack = UIStackView(arrangedSubviews: [imageView, hstack([close, copy], spacing: 6)])
+        stack.axis = .vertical
+        stack.spacing = 6
+        pinEdges(stack, in: cover, insets: UIEdgeInsets(top: 6, left: 6, bottom: 6, right: 6))
+    }
+
+    @objc func copyPreviewSticker() {
+        guard let name = previewSticker else { return }
+        closeStickerPicker()
+        copySticker(name)
     }
 
     func removeSticker(_ name: String) {
@@ -507,7 +559,8 @@ extension KeyboardViewController {
         let row = UIStackView(arrangedSubviews: views)
         row.axis = .horizontal
         row.spacing = 6
-        pinEdges(row, in: barOverlay, insets: UIEdgeInsets(top: 4, left: 8, bottom: 2, right: 8))
+        // 위쪽은 iOS 키보드 판의 둥근 모서리와 붙지 않게 띄운다
+        pinEdges(row, in: barOverlay, insets: UIEdgeInsets(top: 8, left: 8, bottom: 0, right: 8))
     }
 }
 

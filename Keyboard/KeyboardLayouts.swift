@@ -444,6 +444,14 @@ extension KeyboardViewController {
                 self.selectionFeedback.prepare()
             }
         }
+        k.onCursorLine = { [weak self] lines in
+            guard let self = self, !self.adding else { return }
+            self.moveCursorLines(lines)
+            if self.settings.haptic {
+                self.selectionFeedback.selectionChanged()
+                self.selectionFeedback.prepare()
+            }
+        }
         k.onCursorEnd = { [weak self] in
             guard let self = self else { return }
             self.cursorDragging = false

@@ -919,8 +919,8 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         super.init()
         table.dataSource = self
         table.delegate = self
-        table.isEditing = true
-        table.allowsSelectionDuringEditing = false
+        // 끌어서 옮기는 편집 모드는 목록을 밀어 올리는 손짓과 겹쳐서 쓰지 않는다. ▲▼ 버튼으로 옮긴다.
+        table.allowsSelection = false
         table.backgroundColor = .clear
         table.separatorColor = theme.divider
         table.rowHeight = 48
@@ -935,7 +935,7 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         top.font = .systemFont(ofSize: 12)
         top.textColor = theme.muted
         let bottom = UILabel()
-        bottom.text = "≡ 를 끌어서 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다."
+        bottom.text = "▲▼ 로 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다."
         bottom.font = .systemFont(ofSize: 12)
         bottom.textColor = theme.muted
         bottom.adjustsFontSizeToFitWidth = true
@@ -1042,14 +1042,51 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         sw.accessibilityLabel = ToolbarEditList.names[item]
         sw.tag = indexPath.section * 100 + indexPath.row
         sw.addTarget(self, action: #selector(switchChanged(_:)), for: .valueChanged)
-        cell.accessoryView = sw
-        cell.editingAccessoryView = sw
-        cell.showsReorderControl = indexPath.section == 0
+        if indexPath.section == 0 {
+            // [▲][▼][스위치]
+            func arrow(_ name: String, _ tag: Int, enabled: Bool) -> UIButton {
+                let b = UIButton(type: .system)
+                b.setImage(Icon.image(name, size: 18, line: 2), for: .normal)
+                b.tintColor = theme.text
+                b.backgroundColor = theme.funcKey
+                b.layer.cornerRadius = 8
+                b.frame = CGRect(x: 0, y: 0, width: 34, height: 32)
+                b.tag = tag
+                b.isEnabled = enabled
+                b.alpha = enabled ? 1 : 0.3
+                b.addTarget(self, action: #selector(moveTapped(_:)), for: .touchUpInside)
+                return b
+            }
+            let up = arrow("chevron.up", indexPath.row * 10 + 1, enabled: indexPath.row > 0)
+            up.accessibilityLabel = "위로"
+            let down = arrow("chevron.down", indexPath.row * 10 + 2, enabled: indexPath.row < order.count - 1)
+            down.accessibilityLabel = "아래로"
+            let box = UIView(frame: CGRect(x: 0, y: 0, width: 34 + 6 + 34 + 10 + 51, height: 32))
+            up.frame.origin = CGPoint(x: 0, y: 0)
+            down.frame.origin = CGPoint(x: 40, y: 0)
+            sw.frame.origin = CGPoint(x: 84, y: 0.5)
+            box.addSubview(up)
+            box.addSubview(down)
+            box.addSubview(sw)
+            cell.accessoryView = box
+        } else {
+            cell.accessoryView = sw
+        }
         return cell
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         section == 0 ? "왼쪽 (한/영 다음)" : "오른쪽 끝"
+    }
+
+    @objc private func moveTapped(_ b: UIButton) {
+        let row = b.tag / 10
+        let to = b.tag % 10 == 1 ? row - 1 : row + 1
+        guard order.indices.contains(row), order.indices.contains(to) else { return }
+        order.swapAt(row, to)
+        settings.toolbarOrder = order
+        updatePreview()
+        table.reloadSections(IndexSet(integer: 0), with: .automatic)
     }
 
     func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle { .none }

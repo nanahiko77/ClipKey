@@ -146,7 +146,12 @@ final class KeyButton: UIButton {
     var onCursorStart: (() -> Void)?
     var onCursorMove: ((Int) -> Void)?
     var onCursorEnd: (() -> Void)?
+    /// 위아래로 밀면 줄 단위로 (위 -1, 아래 +1)
+    var onCursorLine: ((Int) -> Void)?
+    static let cursorLineStep: CGFloat = 26
     private var cursorX: CGFloat?
+    private var cursorY: CGFloat = 0
+    private var startY: CGFloat = 0
 
     private let hintLabel = UILabel()
     private var startX: CGFloat = 0
@@ -281,6 +286,7 @@ final class KeyButton: UIButton {
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         startX = touch.location(in: self).x
+        startY = touch.location(in: self).y
         swipeCount = nil
         cursorX = nil
         return super.beginTracking(touch, with: event)
@@ -318,18 +324,26 @@ final class KeyButton: UIButton {
     }
 
     private func trackCursor(_ touch: UITouch) {
-        let x = touch.location(in: self).x
+        let p = touch.location(in: self)
+        let x = p.x
         if cursorX == nil {
-            guard abs(x - startX) > KeyButton.cursorStart else { return }
+            guard abs(x - startX) > KeyButton.cursorStart || abs(p.y - startY) > KeyButton.cursorStart else { return }
             cursorX = x
+            cursorY = p.y
             onCursorStart?()
             return
         }
         guard let last = cursorX else { return }
         let steps = Int((x - last) / cursorStep)
-        guard steps != 0 else { return }
-        cursorX = last + CGFloat(steps) * cursorStep
-        onCursorMove?(steps)
+        if steps != 0 {
+            cursorX = last + CGFloat(steps) * cursorStep
+            onCursorMove?(steps)
+        }
+        let lines = Int((p.y - cursorY) / KeyButton.cursorLineStep)
+        if lines != 0 {
+            cursorY += CGFloat(lines) * KeyButton.cursorLineStep
+            onCursorLine?(lines)
+        }
     }
 
     /// 커서를 옮기던 중이었으면 끝내고 true
