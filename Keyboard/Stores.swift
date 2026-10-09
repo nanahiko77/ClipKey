@@ -1,5 +1,6 @@
 import UIKit
 import ImageIO
+import CryptoKit
 
 // MARK: - 설정
 
@@ -114,6 +115,9 @@ struct Clip: Codable, Equatable {
     var width: Int? = nil
     var height: Int? = nil
     var bytes: Int? = nil
+    // 같은 사진을 다시 저장하지 않기 위한 지문: 복사된 원본과, 줄여서 저장한 파일
+    var hash: String? = nil
+    var hash2: String? = nil
 }
 
 /// 키보드 확장 자체 저장소에 JSON으로 기록을 보관한다.
@@ -134,6 +138,7 @@ final class ClipStore {
         imageDir = dir.appendingPathComponent("images", isDirectory: true)
         try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
         load()
+        removeDuplicateImages()
         purgeOrphans()
     }
 
@@ -202,6 +207,16 @@ final class ClipStore {
     @discardableResult
     func addImage(_ data: Data) -> Clip? {
         guard data.count <= ClipStore.maxImageBytes else { return nil }
+        // 이미 저장한 사진이면 새로 만들지 않는다.
+        // (키보드는 열릴 때마다 클립보드를 다시 읽기 때문에, 이 확인이 없으면 같은 사진이 계속 늘어난다)
+        let print = ClipStore.fingerprint(data)
+        if let i = clips.firstIndex(where: { $0.image != nil && ($0.hash == print || $0.hash2 == print) }) {
+            let newest = clips.max { $0.date < $1.date }
+            if newest?.id == clips[i].id { return nil }
+            clips[i].date = Date()
+            save()
+            return clips[i]
+        }
         guard let full = ClipStore.downsample(data, maxPixel: ClipStore.maxImagePixels),
               let jpeg = full.jpegData(compressionQuality: 0.8) else { return nil }
         let name = UUID().uuidString + ".jpg"
@@ -215,7 +230,8 @@ final class ClipStore {
             try? t.write(to: imageDir.appendingPathComponent("t_" + name), options: .atomic)
         }
         let clip = Clip(id: UUID(), text: "", pinned: false, date: Date(), image: name,
-                        width: Int(full.size.width), height: Int(full.size.height), bytes: jpeg.count)
+                        width: Int(full.size.width), height: Int(full.size.height), bytes: jpeg.count,
+                        hash: print, hash2: ClipStore.fingerprint(jpeg))
         clips.append(clip)
         trim()
         save()
@@ -235,6 +251,36 @@ final class ClipStore {
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         return UIImage(cgImage: cg)
+    }
+
+    static func fingerprint(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 예전 버전에서 같은 사진이 여러 번 저장된 것을 정리한다. 고정한 것을 먼저 남긴다.
+    func removeDuplicateImages() {
+        var changed = false
+        for i in clips.indices where clips[i].image != nil && clips[i].hash2 == nil {
+            if let url = imageURL(clips[i]), let data = try? Data(contentsOf: url) {
+                clips[i].hash2 = ClipStore.fingerprint(data)
+                changed = true
+            }
+        }
+        var seen = Set<String>()
+        var drop = Set<UUID>()
+        let ordered = clips.filter { $0.image != nil }.sorted { a, b in
+            if a.pinned != b.pinned { return a.pinned }
+            return a.date > b.date
+        }
+        for c in ordered {
+            guard let h = c.hash2 else { continue }
+            if seen.contains(h) { drop.insert(c.id) } else { seen.insert(h) }
+        }
+        if !drop.isEmpty {
+            clips.removeAll { drop.contains($0.id) }
+            changed = true
+        }
+        if changed { save() }
     }
 
     /// 어느 항목에도 속하지 않는 사진 파일을 지운다. (삭제 후 되돌리기를 위해 파일은 바로 지우지 않는다)
