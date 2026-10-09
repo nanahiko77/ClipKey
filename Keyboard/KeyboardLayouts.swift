@@ -121,8 +121,8 @@ extension KeyboardViewController {
                     arrowLeftButton = l
                     arrowRightButton = r
                 case "undo":
-                    let u = toolButton(symbol: "undo", width: w, plain: true, label: "되돌리기", action: #selector(undoTapped))
-                    let r = toolButton(symbol: "redo", width: w, plain: true, label: "다시 하기", action: #selector(redoTapped))
+                    let u = toolButton(symbol: "undo", width: w, plain: true, label: "되돌리기", action: #selector(editUndoTapped))
+                    let r = toolButton(symbol: "redo", width: w, plain: true, label: "다시 하기", action: #selector(editRedoTapped))
                     toolbar.addArrangedSubview(u)
                     toolbar.addArrangedSubview(r)
                     undoToolButton = u

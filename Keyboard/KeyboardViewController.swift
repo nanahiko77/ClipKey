@@ -1524,7 +1524,7 @@ final class KeyboardViewController: UIInputViewController {
         return true
     }
 
-    @objc func undoTapped() {
+    @objc func editUndoTapped() {
         resetComposer()
         haptic()
         while let g = undoStack.popLast() {
@@ -1542,7 +1542,7 @@ final class KeyboardViewController: UIInputViewController {
         updateUndoButtons()
     }
 
-    @objc func redoTapped() {
+    @objc func editRedoTapped() {
         resetComposer()
         haptic()
         guard let g = redoStack.popLast() else { return }
