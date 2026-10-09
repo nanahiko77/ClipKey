@@ -123,6 +123,14 @@ enum Icon {
             stroke(arrow, line)
             if name == "shift.lock" { stroke(poly([(8, 22.5), (16, 22.5)]), line) }
 
+        case "keyboard.down":
+            stroke(UIBezierPath(roundedRect: CGRect(x: 3, y: 4, width: 18, height: 11), cornerRadius: 2), line)
+            stroke(poly([(7, 8), (7.01, 8)]), line)
+            stroke(poly([(11, 8), (11.01, 8)]), line)
+            stroke(poly([(15, 8), (15.01, 8)]), line)
+            stroke(poly([(8, 11.5), (16, 11.5)]), line)
+            stroke(poly([(9, 19), (12, 22), (15, 19)]), line)
+
         case "star":
             poly([(12, 3), (14.7, 8.6), (20.8, 9.4), (16.3, 13.7), (17.4, 19.8), (12, 17),
                   (6.6, 19.8), (7.7, 13.7), (3.2, 9.4), (9.3, 8.6)], close: true).fill()

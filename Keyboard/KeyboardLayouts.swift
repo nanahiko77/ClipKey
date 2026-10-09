@@ -38,6 +38,7 @@ extension KeyboardViewController {
     /// 상단바와 패널에 쓰는 작은 아이콘
     func toolIcon(_ name: String) -> UIImage? {
         if name.hasPrefix("chevron") { return Icon.image(name, size: 20, line: 2) }
+        if name == "keyboard.down" { return Icon.image(name, size: 20, line: 1.75) }
         return Icon.image(name, size: 18, line: 1.75)
     }
 
@@ -107,6 +108,8 @@ extension KeyboardViewController {
                 toolbar.addArrangedSubview(toolButton(symbol: "chevron.right", width: 36, plain: true,
                                                       label: "커서 오른쪽으로", action: #selector(cursorRight)))
             }
+            toolbar.addArrangedSubview(toolButton(symbol: "keyboard.down", width: 36, plain: true,
+                                                  label: "키보드 닫기", action: #selector(hideKeyboard)))
         case .clipboard:
             toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))

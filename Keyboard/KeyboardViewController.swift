@@ -633,6 +633,11 @@ final class KeyboardViewController: UIInputViewController {
         rebuild()
     }
 
+    @objc func hideKeyboard() {
+        resetComposer()
+        dismissKeyboard()
+    }
+
     @objc func cursorLeft() {
         resetComposer()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
