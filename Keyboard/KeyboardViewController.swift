@@ -397,7 +397,8 @@ final class KeyboardViewController: UIInputViewController {
     func rebuild() {
         resolveTheme()
         disarm()
-        view.backgroundColor = theme.bg
+        // 바탕은 투명하게: iOS 가 깐 키보드 판의 색이 그대로 보여 경계 없이 하나로 보인다
+        view.backgroundColor = .clear
         divider.backgroundColor = theme.divider
         // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
