@@ -1361,8 +1361,10 @@ final class KeyboardViewController: UIInputViewController {
             let rest = after.firstIndex(of: "\n").map { after.distance(from: after.startIndex, to: $0) } ?? after.count
             if rest > 0 {
                 proxy.adjustTextPosition(byCharacterOffset: rest)
-            } else if !after.isEmpty {
-                proxy.adjustTextPosition(byCharacterOffset: 1)       // 이미 줄 맨 끝이면 아랫줄 맨 앞으로
+            } else {
+                // 이미 줄 맨 끝이면 아랫줄 맨 앞으로. 앱이 커서 뒤 글자를 줄 끝까지만 알려 주는 경우가 많아서
+                // (아랫줄이 있어도 빈 값) 비어 있어도 한 칸 옮긴다. 문서 끝이면 그대로다.
+                proxy.adjustTextPosition(byCharacterOffset: 1)
             }
         }
         ctxCache = nil
