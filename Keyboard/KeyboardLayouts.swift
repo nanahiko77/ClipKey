@@ -391,7 +391,7 @@ extension KeyboardViewController {
         let k = KeyButton()
         k.id = id ?? title
         k.setTitle(title, for: .normal)
-        k.titleLabel?.font = .systemFont(ofSize: font)
+        k.titleLabel?.font = .systemFont(ofSize: (font * settings.keyFontScale).rounded())
         style(k, fn: fn)
         k.hintText = hint
         wire(k)
@@ -595,7 +595,7 @@ extension KeyboardViewController {
     func buildNara() {
         let hints = settings.naraHints
         func jamo(_ title: String, _ id: String, _ digit: String) -> KeyButton {
-            let k = makeKey(title, id: id, hint: hints ? digit : nil, font: 22)
+            let k = makeKey(title, id: id, hint: hints ? digit : nil, font: 24)      // 예전 22
             k.layer.cornerRadius = 8
             return k
         }
@@ -617,8 +617,8 @@ extension KeyboardViewController {
         let punctAndNum = hstack([num, rounded(makeKey(".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
         let row3 = row([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9")], punctAndNum)
         // 맨 아래 줄은 손가락이 위로 닿기 쉬워서, 키 위쪽 5pt 까지 이 줄의 키로 받는다
-        let bottom = [rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
-                      rounded(makeKey("쌍자음", id: "double", font: 16))]
+        let bottom = [rounded(makeKey("획추가", id: "stroke", font: 17)), jamo("ㅡ", "ㅡ", "0"),
+                      rounded(makeKey("쌍자음", id: "double", font: 17))]
         let ret = rounded(returnKey())
         for k in bottom + [ret] { k.reachUp = 5 }
         let row4 = row(bottom, ret)

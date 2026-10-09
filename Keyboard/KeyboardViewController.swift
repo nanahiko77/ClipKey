@@ -432,7 +432,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.showArrows)|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
