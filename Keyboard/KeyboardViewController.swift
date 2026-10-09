@@ -655,7 +655,7 @@ final class KeyboardViewController: UIInputViewController {
             suggestStack.addArrangedSubview(chip)
             suggestStack.setCustomSpacing(4, after: chip)
         }
-        guard panel == .keys else { return }
+        // 숫자·기호 화면에서도 추천한다 (등록해 둔 전화번호 등)
         let word = currentWord()
         guard !word.isEmpty else { return }
 
