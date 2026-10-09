@@ -152,6 +152,8 @@ final class KeyButton: UIButton {
     private var cursorX: CGFloat?
     private var cursorY: CGFloat = 0
     private var startY: CGFloat = 0
+    /// 처음 민 방향으로 고정한다 (위아래로 밀 때 좌우로 조금 흔들려도 글자 단위로 움직이지 않게)
+    private var cursorVertical = false
 
     private let hintLabel = UILabel()
     private var startX: CGFloat = 0
@@ -330,16 +332,17 @@ final class KeyButton: UIButton {
             guard abs(x - startX) > KeyButton.cursorStart || abs(p.y - startY) > KeyButton.cursorStart else { return }
             cursorX = x
             cursorY = p.y
+            cursorVertical = abs(p.y - startY) > abs(x - startX) && onCursorLine != nil
             onCursorStart?()
             return
         }
         guard let last = cursorX else { return }
-        let steps = Int((x - last) / cursorStep)
+        let steps = cursorVertical ? 0 : Int((x - last) / cursorStep)
         if steps != 0 {
             cursorX = last + CGFloat(steps) * cursorStep
             onCursorMove?(steps)
         }
-        let lines = Int((p.y - cursorY) / KeyButton.cursorLineStep)
+        let lines = cursorVertical ? Int((p.y - cursorY) / KeyButton.cursorLineStep) : 0
         if lines != 0 {
             cursorY += CGFloat(lines) * KeyButton.cursorLineStep
             onCursorLine?(lines)
