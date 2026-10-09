@@ -180,6 +180,7 @@ final class KeyButton: UIButton {
 final class ClipCell: UITableViewCell {
     let card = UIView()
     let pinButton = UIButton(type: .system)
+    let thumb = UIImageView()
     let label = UILabel()
     let deleteButton = UIButton(type: .system)
     let cancelButton = UIButton(type: .system)
@@ -219,7 +220,13 @@ final class ClipCell: UITableViewCell {
         }
         deleteButton.setImage(Icon.image("trash", size: 16, line: 1.75), for: .normal)
 
-        let stack = UIStackView(arrangedSubviews: [pinButton, label, deleteButton, cancelButton, confirmButton])
+        thumb.contentMode = .scaleAspectFill
+        thumb.clipsToBounds = true
+        thumb.layer.cornerRadius = 6
+        thumb.widthAnchor.constraint(equalToConstant: 37).isActive = true
+        thumb.heightAnchor.constraint(equalToConstant: 37).isActive = true
+
+        let stack = UIStackView(arrangedSubviews: [pinButton, thumb, label, deleteButton, cancelButton, confirmButton])
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = 6
@@ -247,7 +254,34 @@ final class ClipCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ clip: Clip, confirming: Bool, theme: Theme) {
+    static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+
+    /// 사진 항목의 두 줄: 복사한 날짜와 시각, 그 아래에 크기와 용량
+    static func photoText(_ clip: Clip, theme: Theme) -> NSAttributedString {
+        let s = NSMutableAttributedString(
+            string: dateFormatter.string(from: clip.date),
+            attributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .regular),
+                         .foregroundColor: theme.text])
+        var info = ""
+        if let w = clip.width, let h = clip.height { info = "\(w) × \(h)" }
+        if let b = clip.bytes {
+            let mb = String(format: "%.1f MB", Double(b) / 1_048_576)
+            info = info.isEmpty ? mb : info + " · " + mb
+        }
+        if !info.isEmpty {
+            s.append(NSAttributedString(
+                string: "\n" + info,
+                attributes: [.font: UIFont.systemFont(ofSize: 12), .foregroundColor: theme.muted]))
+        }
+        return s
+    }
+
+    func configure(_ clip: Clip, confirming: Bool, theme: Theme, thumbnail: UIImage? = nil) {
         card.backgroundColor = theme.row
         card.layer.borderWidth = confirming ? 2 : 0
         card.layer.borderColor = theme.danger.cgColor
@@ -257,11 +291,22 @@ final class ClipCell: UITableViewCell {
         cancelButton.isHidden = !confirming
         confirmButton.isHidden = !confirming
 
+        thumb.isHidden = confirming || clip.image == nil
+        thumb.image = thumbnail
+        thumb.backgroundColor = theme.funcKey
+
         if confirming {
+            label.attributedText = nil
+            label.numberOfLines = 1
             label.text = "  고정 항목을 삭제할까요?"
             label.font = .boldSystemFont(ofSize: 15)
             label.textColor = theme.danger
+        } else if clip.image != nil {
+            label.numberOfLines = 2
+            label.attributedText = ClipCell.photoText(clip, theme: theme)
         } else {
+            label.attributedText = nil
+            label.numberOfLines = 1
             label.text = clip.text.replacingOccurrences(of: "\n", with: " ")
             label.font = .systemFont(ofSize: 15)
             label.textColor = theme.text

@@ -66,6 +66,32 @@ extension KeyboardViewController {
         toolbar.arrangedSubviews.forEach { $0.removeFromSuperview() }
         switch panel {
         case .keys, .symbols:
+            if adding {
+                // 단어 추가: 한/영과 123 은 남기고, 나머지 자리에 입력칸과 취소/저장
+                let langKey = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
+                langKey.setAttributedTitle(langTitle(), for: .normal)
+                toolbar.addArrangedSubview(langKey)
+                toolbar.addArrangedSubview(toolButton("123", width: 44, active: panel == .symbols,
+                                                      label: "숫자와 기호", action: #selector(numTapped)))
+                let box = UIView()
+                box.backgroundColor = theme.key
+                box.layer.cornerRadius = 8
+                box.heightAnchor.constraint(equalToConstant: 36).isActive = true
+                box.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                box.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                let field = UILabel()
+                field.font = .systemFont(ofSize: 15)
+                field.textColor = theme.text
+                field.lineBreakMode = .byTruncatingHead
+                field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                pinEdges(field, in: box, insets: UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10))
+                addField = field
+                updateAddField()
+                toolbar.addArrangedSubview(box)
+                toolbar.addArrangedSubview(toolButton("취소", width: 46, action: #selector(cancelAddWord)))
+                toolbar.addArrangedSubview(toolButton("저장", width: 46, active: true, action: #selector(saveAddWord)))
+                break
+            }
             let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
             langB.setAttributedTitle(langTitle(), for: .normal)
             toolbar.addArrangedSubview(langB)
@@ -107,6 +133,9 @@ extension KeyboardViewController {
             let clear = toolButton("모두 지우기", plain: true, color: theme.danger, action: #selector(clearWordsTapped(_:)))
             clear.titleLabel?.font = .boldSystemFont(ofSize: 14)
             toolbar.addArrangedSubview(clear)
+            let add = toolButton("단어 추가", action: #selector(startAddWord))
+            add.titleLabel?.font = .boldSystemFont(ofSize: 14)
+            toolbar.addArrangedSubview(add)
         }
     }
 

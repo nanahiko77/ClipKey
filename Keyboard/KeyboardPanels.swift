@@ -86,7 +86,8 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         let cell = tableView.dequeueReusableCell(withIdentifier: "clip", for: indexPath)
         guard let clipCell = cell as? ClipCell, indexPath.row < clipItems.count else { return cell }
         let clip = clipItems[indexPath.row]
-        clipCell.configure(clip, confirming: clip.id == confirmingID, theme: theme)
+        let thumbnail = store.thumbURL(clip).flatMap { UIImage(contentsOfFile: $0.path) }
+        clipCell.configure(clip, confirming: clip.id == confirmingID, theme: theme, thumbnail: thumbnail)
         clipCell.onPin = { [weak self] in
             self?.store.togglePin(clip.id)
             self?.reloadClips()
@@ -120,11 +121,52 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     func pasteClip(_ clip: Clip) {
+        if clip.image != nil {
+            copyImage(clip)
+            return
+        }
         resetComposer()
-        textDocumentProxy.insertText(clip.text)
+        docInsert(clip.text)
         if freshClip?.id == clip.id { freshClip = nil }
         panel = .keys
         rebuild()
+    }
+
+    /// 키보드는 입력창에 사진을 직접 넣을 수 없다. 다시 "복사된 상태"로 돌려놓고 안내한다.
+    func copyImage(_ clip: Clip) {
+        guard let url = store.imageURL(clip), let data = try? Data(contentsOf: url) else { return }
+        let pb = UIPasteboard.general
+        pb.setData(data, forPasteboardType: "public.jpeg")
+        lastChangeCount = pb.changeCount       // 우리가 넣은 것을 새 복사로 다시 저장하지 않게
+        showToast("사진을 복사했습니다.\n입력창을 길게 눌러 붙여넣으세요.")
+    }
+
+    /// 목록 아래에 잠깐 뜨는 안내
+    func showToast(_ text: String) {
+        undoTimer?.invalidate()
+        undoBar?.removeFromSuperview()
+        undoClip = nil
+
+        let bar = UIView()
+        bar.backgroundColor = theme.text
+        bar.layer.cornerRadius = 8
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        let label = UILabel()
+        label.text = text
+        label.numberOfLines = 0
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = theme.bg
+        pinEdges(label, in: bar, insets: UIEdgeInsets(top: 9, left: 14, bottom: 9, right: 14))
+        keyArea.addSubview(bar)
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor, constant: 6),
+            bar.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor, constant: -6),
+            bar.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: -6),
+        ])
+        undoBar = bar
+        undoTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
+            self?.undoBar?.removeFromSuperview()
+        }
     }
 
     func deleteClip(_ clip: Clip) {
@@ -219,11 +261,26 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         textView.backgroundColor = theme.row
         textView.layer.cornerRadius = 8
 
+        var content: UIView = textView
+        var pasteTitle = "붙여넣기"
+        if clip.image != nil, let url = store.imageURL(clip), let img = UIImage(contentsOfFile: url.path) {
+            let imageView = UIImageView(image: img)
+            imageView.contentMode = .scaleAspectFit
+            imageView.backgroundColor = theme.row
+            imageView.layer.cornerRadius = 8
+            imageView.clipsToBounds = true
+            imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            imageView.setContentHuggingPriority(.defaultLow, for: .vertical)
+            content = imageView
+            pasteTitle = "복사"
+        }
+
         let close = toolButton("닫기", action: #selector(closePreview))
-        let paste = toolButton("붙여넣기", active: true, action: #selector(pastePreview))
+        let paste = toolButton(pasteTitle, active: true, action: #selector(pastePreview))
         let buttons = hstack([close, paste], spacing: 6)
 
-        let stack = UIStackView(arrangedSubviews: [textView, buttons])
+        let stack = UIStackView(arrangedSubviews: [content, buttons])
         stack.axis = .vertical
         stack.spacing = 6
         pinEdges(stack, in: cover, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
@@ -238,7 +295,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
     @objc func pastePreview() {
         guard let clip = previewClip else { return }
-        previewClip = nil
+        closePreview()
         pasteClip(clip)
     }
 
@@ -303,12 +360,14 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("한글 자판", segment(["나랏글", "두벌식"], selected: settings.hangulLayout, tag: 0)),
             settingRow("나랏글 보조키 (꾹 눌러 숫자)", toggle(settings.naraHints, tag: 10)),
             settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
+            settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
             settingHeader("상단바"),
             settingRow("커서 좌우 화살표", toggle(settings.showArrows, tag: 14)),
             settingRow("영문 오타 자동 교정", toggle(settings.autoCorrect, tag: 13)),
             settingRow("학습한 단어", wordButtons),
             settingHeader("클립보드"),
             settingRow("기록 보관 개수", segment(["20", "50", "100"], selected: countIndex, tag: 2)),
+            settingRow("사진도 저장 (최근 10장)", toggle(settings.savePhotos, tag: 16)),
             settingHeader("공통"),
             settingRow("화면 모드", segment(["시스템", "라이트", "다크"], selected: settings.themeMode, tag: 1)),
             settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
@@ -344,6 +403,8 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 1:
             settings.themeMode = s.selectedSegmentIndex
             rebuild()
+        case 3:
+            settings.doubleSpace = s.selectedSegmentIndex
         case 2:
             settings.maxClips = [20, 50, 100][min(max(s.selectedSegmentIndex, 0), 2)]
             store.trimAndSave()
@@ -360,6 +421,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 13: settings.autoCorrect = s.isOn
         case 14: settings.showArrows = s.isOn
         case 15: settings.keySound = s.isOn
+        case 16: settings.savePhotos = s.isOn
         default: break
         }
     }

@@ -1,4 +1,5 @@
 import UIKit
+import ImageIO
 
 // MARK: - 설정
 
@@ -34,6 +35,16 @@ final class Settings {
     var maxClips: Int {
         get { d.integer(forKey: "maxClips") }
         set { d.set(newValue, forKey: "maxClips") }
+    }
+    /// 간격을 연달아 두 번 누르면: 0 그대로, 1 마침표, 2 쉼표
+    var doubleSpace: Int {
+        get { d.integer(forKey: "doubleSpace") }
+        set { d.set(newValue, forKey: "doubleSpace") }
+    }
+    /// 복사한 사진도 기록에 넣을지
+    var savePhotos: Bool {
+        get { d.bool(forKey: "savePhotos") }
+        set { d.set(newValue, forKey: "savePhotos") }
     }
     var haptic: Bool {
         get { d.bool(forKey: "haptic") }
@@ -98,20 +109,32 @@ struct Clip: Codable, Equatable {
     var text: String
     var pinned: Bool
     var date: Date
+    // 사진 항목일 때만 채워진다
+    var image: String? = nil       // 줄여서 저장한 파일 이름
+    var width: Int? = nil
+    var height: Int? = nil
+    var bytes: Int? = nil
 }
 
 /// 키보드 확장 자체 저장소에 JSON으로 기록을 보관한다.
 final class ClipStore {
     static let maxLength = 10_000
+    static let maxImages = 10                        // 고정하지 않은 사진은 최근 10장
+    static let maxImageBytes = 20 * 1024 * 1024      // 이보다 큰 사진 데이터는 건너뛴다
+    static let maxImagePixels = 1024                 // 긴 변을 이 크기로 줄여 저장
 
     private(set) var clips: [Clip] = []
     private let url: URL
+    private let imageDir: URL
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         url = dir.appendingPathComponent("clips.json")
+        imageDir = dir.appendingPathComponent("images", isDirectory: true)
+        try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
         load()
+        purgeOrphans()
     }
 
     /// 고정된 항목이 위, 그 안에서는 최신순
@@ -162,11 +185,82 @@ final class ClipStore {
     func clearUnpinned() {
         clips.removeAll { !$0.pinned }
         save()
+        purgeOrphans()
+    }
+
+    // MARK: 사진
+
+    func imageURL(_ clip: Clip) -> URL? {
+        clip.image.map { imageDir.appendingPathComponent($0) }
+    }
+
+    func thumbURL(_ clip: Clip) -> URL? {
+        clip.image.map { imageDir.appendingPathComponent("t_" + $0) }
+    }
+
+    /// 복사된 사진 데이터를 줄여서 저장한다. 너무 크거나 읽을 수 없으면 nil.
+    @discardableResult
+    func addImage(_ data: Data) -> Clip? {
+        guard data.count <= ClipStore.maxImageBytes else { return nil }
+        guard let full = ClipStore.downsample(data, maxPixel: ClipStore.maxImagePixels),
+              let jpeg = full.jpegData(compressionQuality: 0.8) else { return nil }
+        let name = UUID().uuidString + ".jpg"
+        do {
+            try jpeg.write(to: imageDir.appendingPathComponent(name), options: .atomic)
+        } catch {
+            return nil
+        }
+        // 목록에서는 이 작은 그림만 불러온다
+        if let small = ClipStore.downsample(jpeg, maxPixel: 120), let t = small.jpegData(compressionQuality: 0.7) {
+            try? t.write(to: imageDir.appendingPathComponent("t_" + name), options: .atomic)
+        }
+        let clip = Clip(id: UUID(), text: "", pinned: false, date: Date(), image: name,
+                        width: Int(full.size.width), height: Int(full.size.height), bytes: jpeg.count)
+        clips.append(clip)
+        trim()
+        save()
+        purgeOrphans()
+        return clip
+    }
+
+    /// 원본을 통째로 펼치지 않고, 처음부터 줄인 크기로만 읽는다 (메모리를 아끼기 위해)
+    static func downsample(_ data: Data, maxPixel: Int) -> UIImage? {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+
+    /// 어느 항목에도 속하지 않는 사진 파일을 지운다. (삭제 후 되돌리기를 위해 파일은 바로 지우지 않는다)
+    func purgeOrphans() {
+        var keep = Set<String>()
+        for c in clips {
+            if let name = c.image {
+                keep.insert(name)
+                keep.insert("t_" + name)
+            }
+        }
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: imageDir.path)) ?? []
+        for file in files where !keep.contains(file) {
+            try? FileManager.default.removeItem(at: imageDir.appendingPathComponent(file))
+        }
     }
 
     func trim() {
+        // 사진은 글자와 따로 센다
+        let images = clips.filter { !$0.pinned && $0.image != nil }.sorted { $0.date > $1.date }
+        if images.count > ClipStore.maxImages {
+            let drop = Set(images.dropFirst(ClipStore.maxImages).map { $0.id })
+            clips.removeAll { drop.contains($0.id) }
+        }
         let limit = max(Settings.shared.maxClips, 1)
-        let unpinned = clips.filter { !$0.pinned }.sorted { $0.date > $1.date }
+        let unpinned = clips.filter { !$0.pinned && $0.image == nil }.sorted { $0.date > $1.date }
         guard unpinned.count > limit else { return }
         let drop = Set(unpinned.dropFirst(limit).map { $0.id })
         clips.removeAll { drop.contains($0.id) }
@@ -215,6 +309,16 @@ final class WordStore {
         let next = (counts[w] ?? 0) + 1
         counts[w] = force ? max(next, 2) : next
         if counts.count > 2000 { prune() }
+        save()
+    }
+
+    static let manualCount = 1_000_000
+
+    /// 단어 관리에서 직접 넣은 단어. 숫자나 하이픈, 띄어쓰기가 있어도 되고 바로 추천에 나온다.
+    func addManual(_ raw: String) {
+        let w = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !w.isEmpty, w.count <= 60 else { return }
+        counts[w] = max(counts[w] ?? 0, WordStore.manualCount)
         save()
     }
 

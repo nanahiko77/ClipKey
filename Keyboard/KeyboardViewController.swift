@@ -37,6 +37,9 @@ final class KeyboardViewController: UIInputViewController {
     var lastKeyTime = Date.distantPast
     var punctIndex = 0
     var skipCorrection: String?
+    var spaceRepeat = false            // 간격을 방금 연달아 눌렀는지
+    var armedSuggestion: String?       // 길게 눌러 삭제 대기 중인 추천 단어
+    var suggestArmTimer: Timer?
 
     // 클립보드 수집
     var freshClip: Clip?
@@ -143,6 +146,7 @@ final class KeyboardViewController: UIInputViewController {
         pasteTimer = nil
         stopDelete()
         resetComposer()
+        addBuffer = nil
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
@@ -197,9 +201,14 @@ final class KeyboardViewController: UIInputViewController {
         let pb = UIPasteboard.general
         guard pb.changeCount != lastChangeCount else { return }
         lastChangeCount = pb.changeCount
-        guard pb.hasStrings, let text = pb.string else { return }
-        guard let clip = store.add(text) else { return }
-        freshClip = clip
+        if pb.hasStrings, let text = pb.string {
+            guard let clip = store.add(text) else { return }
+            freshClip = clip
+        } else if settings.savePhotos, pb.hasImages, let data = pastedImageData(pb) {
+            guard store.addImage(data) != nil else { return }
+        } else {
+            return
+        }
         if panel == .clipboard {
             reloadClips()
         } else {
@@ -207,14 +216,81 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    /// 복사된 사진의 원본 데이터. 사진을 펼치지 않고 데이터만 가져온다.
+    func pastedImageData(_ pb: UIPasteboard) -> Data? {
+        for type in ["public.jpeg", "public.heic", "public.png", "public.tiff"] {
+            if let d = pb.data(forPasteboardType: type) { return d }
+        }
+        return nil
+    }
+
+    // MARK: - 글자가 들어가는 곳
+
+    /// 단어 추가 화면에서는 글자를 앱 입력창이 아니라 이 칸에 넣는다. nil 이면 평소 입력.
+    var addBuffer: String?
+    weak var addField: UILabel?
+    var adding: Bool { addBuffer != nil }
+
+    var docBefore: String? {
+        if let b = addBuffer { return b }
+        return textDocumentProxy.documentContextBeforeInput
+    }
+
+    func docInsert(_ s: String) {
+        if addBuffer != nil {
+            addBuffer?.append(s)
+            updateAddField()
+        } else {
+            textDocumentProxy.insertText(s)
+        }
+    }
+
+    func docDelete() {
+        if let b = addBuffer {
+            if !b.isEmpty { addBuffer?.removeLast() }
+            updateAddField()
+        } else {
+            textDocumentProxy.deleteBackward()
+        }
+    }
+
+    func updateAddField() {
+        addField?.text = (addBuffer ?? "") + "|"
+    }
+
+    @objc func startAddWord() {
+        resetComposer()
+        addBuffer = ""
+        shift = .off
+        panel = .keys
+        rebuild()
+    }
+
+    @objc func cancelAddWord() {
+        resetComposer()
+        addBuffer = nil
+        panel = .words
+        rebuild()
+    }
+
+    /// 직접 넣은 단어는 횟수와 상관없이 바로 추천에 나온다. 숫자와 하이픈도 들어간다.
+    @objc func saveAddWord() {
+        resetComposer()
+        let text = (addBuffer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        addBuffer = nil
+        if !text.isEmpty { words.addManual(text) }
+        panel = .words
+        rebuild()
+    }
+
     // MARK: - 조합 글자와 문서 맞추기
 
     /// 조합기를 바꾼 뒤 호출한다. 문서의 조합 중 글자를 새 글자로 바꿔 넣는다.
     func apply(commit: String) {
         let newText = composer.text
-        for _ in 0..<composing.count { textDocumentProxy.deleteBackward() }
+        for _ in 0..<composing.count { docDelete() }
         let out = commit + newText
-        if !out.isEmpty { textDocumentProxy.insertText(out) }
+        if !out.isEmpty { docInsert(out) }
         composing = newText
     }
 
@@ -228,33 +304,41 @@ final class KeyboardViewController: UIInputViewController {
     /// 커서를 직접 옮겼거나 다른 곳을 눌렀으면 조합을 끊는다
     func syncComposer() {
         guard !composing.isEmpty else { return }
-        if let ctx = textDocumentProxy.documentContextBeforeInput, !ctx.hasSuffix(composing) {
+        if let ctx = docBefore, !ctx.hasSuffix(composing) {
             resetComposer()
         }
     }
 
     func currentWord() -> String {
-        guard let ctx = textDocumentProxy.documentContextBeforeInput else { return "" }
+        guard let ctx = docBefore else { return "" }
         var chars: [Character] = []
         for ch in ctx.reversed() {
-            if ch.isLetter || ch == "'" { chars.append(ch) } else { break }
+            if ch.isLetter || ch.isNumber || ch == "'" {
+                chars.append(ch)
+            } else if ch == "-", let last = chars.last, last.isNumber {
+                chars.append(ch)        // 전화번호처럼 숫자 사이의 하이픈
+            } else {
+                break
+            }
         }
         return String(chars.reversed())
     }
 
     func replaceWord(_ word: String, with text: String) {
-        for _ in 0..<word.count { textDocumentProxy.deleteBackward() }
-        textDocumentProxy.insertText(text)
+        for _ in 0..<word.count { docDelete() }
+        docInsert(text)
     }
 
     // MARK: - 키 입력
 
     func handleKey(_ id: String) {
         syncComposer()
+        armedSuggestion = nil
         let now = Date()
         let gap = now.timeIntervalSince(lastKeyTime)
         let sameKey = id == lastKeyID
         if !id.hasPrefix("v:") { snapshot = nil }
+        spaceRepeat = id == "space" && sameKey && gap < 0.6
 
         switch id {
         case "space":
@@ -265,14 +349,14 @@ final class KeyboardViewController: UIInputViewController {
             toggleShift(doubleTap: sameKey && gap < 0.4)
         case "punct":
             if sameKey && gap < 1.2 {
-                textDocumentProxy.deleteBackward()
+                docDelete()
                 punctIndex = (punctIndex + 1) % KeyboardViewController.puncts.count
             } else {
                 resetComposer()
-                words.learn(currentWord())
+                if !adding { words.learn(currentWord()) }
                 punctIndex = 0
             }
-            textDocumentProxy.insertText(KeyboardViewController.puncts[punctIndex])
+            docInsert(KeyboardViewController.puncts[punctIndex])
         case "stroke":
             composer.nara = true
             let out = composer.transformLast(HangulComposer.strokeTable)
@@ -308,9 +392,9 @@ final class KeyboardViewController: UIInputViewController {
     func plain(_ s: String) {
         resetComposer()
         if let f = s.first, !f.isLetter, !f.isNumber {
-            words.learn(currentWord())
+            if !adding { words.learn(currentWord()) }
         }
-        textDocumentProxy.insertText(s)
+        docInsert(s)
     }
 
     /// 꾹 눌러서 나온 보조 글자
@@ -324,7 +408,7 @@ final class KeyboardViewController: UIInputViewController {
 
     func inputEnglish(_ ch: Character) {
         let s = shift == .off ? String(ch) : String(ch).uppercased()
-        textDocumentProxy.insertText(s)
+        docInsert(s)
         if shift == .once {
             shift = .off
             updateLetterTitles()
@@ -349,10 +433,10 @@ final class KeyboardViewController: UIInputViewController {
         composer.nara = true
         var v = a
         if lastKeyID == id, let snap = snapshot {
-            for _ in 0..<(composing.count + snap.commit.count) { textDocumentProxy.deleteBackward() }
+            for _ in 0..<(composing.count + snap.commit.count) { docDelete() }
             composer = snap.composer
             let t = composer.text
-            if !t.isEmpty { textDocumentProxy.insertText(t) }
+            if !t.isEmpty { docInsert(t) }
             composing = t
             v = snap.vowel == a ? b : a
         }
@@ -363,7 +447,22 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func commitWord(separator: String) {
+        if adding {
+            // 단어 추가 화면: 줄바꿈은 저장, 간격은 그대로 넣는다
+            resetComposer()
+            if separator == "\n" { saveAddWord() } else { docInsert(separator) }
+            return
+        }
         resetComposer()
+        // 간격 두 번: 방금 넣은 간격을 "마침표+간격" 또는 "쉼표+간격"으로 바꾼다
+        if separator == " ", spaceRepeat, settings.doubleSpace != 0,
+           let ctx = docBefore, ctx.hasSuffix(" "), let prev = ctx.dropLast().last,
+           prev.isLetter || prev.isNumber {
+            docDelete()
+            docInsert(settings.doubleSpace == 1 ? ". " : ", ")
+            autoCapIfNeeded()
+            return
+        }
         let word = currentWord()
         if panel == .keys, lang == .english, settings.autoCorrect, separator == " ",
            let fix = correction(for: word) {
@@ -372,7 +471,7 @@ final class KeyboardViewController: UIInputViewController {
         } else {
             words.learn(word)
         }
-        textDocumentProxy.insertText(separator)
+        docInsert(separator)
         autoCapIfNeeded()
     }
 
@@ -409,8 +508,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func autoCapIfNeeded() {
-        guard settings.autoCap, lang == .english, panel == .keys, shift == .off else { return }
-        let ctx = textDocumentProxy.documentContextBeforeInput ?? ""
+        guard !adding, settings.autoCap, lang == .english, panel == .keys, shift == .off else { return }
+        let ctx = docBefore ?? ""
         let trimmed = ctx.trimmingCharacters(in: .whitespaces)
         let startOfSentence = trimmed.isEmpty || trimmed.hasSuffix(".") || trimmed.hasSuffix("!")
             || trimmed.hasSuffix("?") || trimmed.hasSuffix("\n")
@@ -429,7 +528,7 @@ final class KeyboardViewController: UIInputViewController {
         if composer.backspace() {
             apply(commit: "")
         } else {
-            textDocumentProxy.deleteBackward()
+            docDelete()
         }
         lastKeyID = "⌫"
         refreshSuggestions()
@@ -455,6 +554,11 @@ final class KeyboardViewController: UIInputViewController {
     func deleteAll() {
         stopDelete()
         resetComposer()
+        if adding {
+            addBuffer = ""
+            updateAddField()
+            return
+        }
         if let after = textDocumentProxy.documentContextAfterInput, !after.isEmpty {
             textDocumentProxy.adjustTextPosition(byCharacterOffset: after.count)
         }
@@ -465,12 +569,12 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 키보드는 커서 앞 글자를 한 번에 일부만 볼 수 있어서, 남은 것이 없을 때까지 나눠 지운다
     func deleteAllPass(_ pass: Int) {
-        guard pass < 40, let before = textDocumentProxy.documentContextBeforeInput, !before.isEmpty else {
+        guard pass < 40, let before = docBefore, !before.isEmpty else {
             lastKeyID = "⌫"
             refreshSuggestions()
             return
         }
-        for _ in 0..<before.count { textDocumentProxy.deleteBackward() }
+        for _ in 0..<before.count { docDelete() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             self?.deleteAllPass(pass + 1)
         }
@@ -542,12 +646,14 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - 추천 단어
 
     func refreshSuggestions() {
-        guard panel == .keys || panel == .symbols else { return }
+        guard !adding, panel == .keys || panel == .symbols else { return }
         suggestStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         suggestItems = []
 
         if let clip = freshClip {
-            suggestStack.addArrangedSubview(clipChip(clip))
+            let chip = clipChip(clip)
+            suggestStack.addArrangedSubview(chip)
+            suggestStack.setCustomSpacing(4, after: chip)
         }
         guard panel == .keys else { return }
         let word = currentWord()
@@ -569,34 +675,56 @@ final class KeyboardViewController: UIInputViewController {
             add(c.text, .pinned)
         }
         let language: String? = lang == .english ? "en_US" : koLanguage
-        if let language = language {
+        if let language = language, word.allSatisfy({ $0.isLetter }) {
             let range = NSRange(location: 0, length: (word as NSString).length)
             let found = checker.completions(forPartialWordRange: range, in: word, language: language) ?? []
             for c in found.prefix(4) { add(c, .dict) }
         }
 
+        var previousPlain = false
         for (i, item) in items.enumerated() {
-            if i > 0 || freshClip != nil {
-                let line = UIView()
-                line.backgroundColor = theme.divider
-                line.widthAnchor.constraint(equalToConstant: 1).isActive = true
-                line.heightAnchor.constraint(equalToConstant: 20).isActive = true
-                suggestStack.addArrangedSubview(line)
-            }
-            let b = UIButton(type: .system)
             var title = item.text.replacingOccurrences(of: "\n", with: " ")
             if title.count > 14 { title = String(title.prefix(14)) + "…" }
-            b.setTitle(title, for: .normal)
-            let strong = item.kind == .correction
-            b.titleLabel?.font = strong ? .boldSystemFont(ofSize: 15) : .systemFont(ofSize: 15)
-            b.setTitleColor(strong ? theme.text : theme.muted, for: .normal)
-            b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+            let isChip = item.kind == .learned || item.kind == .pinned
+            let armed = item.kind == .learned && item.text == armedSuggestion
+            let b = UIButton(type: .system)
             b.tag = i
             b.addTarget(self, action: #selector(suggestionTapped(_:)), for: .touchUpInside)
-            if item.kind == .learned {
-                b.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(suggestionLongPressed(_:))))
+            if isChip {
+                // 내가 등록했거나 자주 친 단어는 별표, 고정한 클립은 압정이 붙은 반투명 칩.
+                // 길게 눌러 삭제 대기가 되면 빨간 "단어 ×" 칩으로 바뀐다.
+                let iconName = armed ? "xmark" : (item.kind == .learned ? "star" : "pin.fill")
+                b.setImage(Icon.image(iconName, size: 13, line: armed ? 2.5 : 1.75), for: .normal)
+                b.setTitle(armed ? title + " " : " " + title, for: .normal)
+                if armed { b.semanticContentAttribute = .forceRightToLeft }
+                b.titleLabel?.font = armed ? .boldSystemFont(ofSize: 14) : .systemFont(ofSize: 14)
+                b.tintColor = armed ? theme.onDanger : theme.muted
+                b.setTitleColor(armed ? theme.onDanger : theme.text, for: .normal)
+                b.backgroundColor = armed ? theme.danger : theme.key.withAlphaComponent(isDark ? 0.35 : 0.6)
+                b.layer.cornerRadius = 15
+                b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 10)
+                b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+                if item.kind == .learned {
+                    b.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(suggestionLongPressed(_:))))
+                }
+                previousPlain = false
+            } else {
+                if previousPlain {
+                    let line = UIView()
+                    line.backgroundColor = theme.divider
+                    line.widthAnchor.constraint(equalToConstant: 1).isActive = true
+                    line.heightAnchor.constraint(equalToConstant: 20).isActive = true
+                    suggestStack.addArrangedSubview(line)
+                }
+                b.setTitle(title, for: .normal)
+                let strong = item.kind == .correction
+                b.titleLabel?.font = strong ? .boldSystemFont(ofSize: 15) : .systemFont(ofSize: 15)
+                b.setTitleColor(strong ? theme.text : theme.muted, for: .normal)
+                b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+                previousPlain = true
             }
             suggestStack.addArrangedSubview(b)
+            suggestStack.setCustomSpacing(isChip ? 4 : 0, after: b)
         }
         suggestItems = items
         suggestScroll.setContentOffset(.zero, animated: false)
@@ -623,7 +751,7 @@ final class KeyboardViewController: UIInputViewController {
     @objc func chipTapped() {
         guard let clip = freshClip else { return }
         resetComposer()
-        textDocumentProxy.insertText(clip.text)
+        docInsert(clip.text)
         freshClip = nil
         refreshSuggestions()
     }
@@ -631,6 +759,14 @@ final class KeyboardViewController: UIInputViewController {
     @objc func suggestionTapped(_ sender: UIButton) {
         guard sender.tag < suggestItems.count else { return }
         let item = suggestItems[sender.tag]
+        if item.kind == .learned, item.text == armedSuggestion {
+            // 삭제 대기 중인 칩을 한 번 더 누르면 그 단어를 지운다
+            suggestArmTimer?.invalidate()
+            armedSuggestion = nil
+            words.remove(item.text)
+            refreshSuggestions()
+            return
+        }
         let word = currentWord()
         resetComposer()
         switch item.kind {
@@ -638,22 +774,27 @@ final class KeyboardViewController: UIInputViewController {
             // 고치지 않고 친 그대로 쓴다. 다음부터는 오타로 보지 않는다.
             skipCorrection = word
             words.learn(word, force: true)
-            textDocumentProxy.insertText(" ")
+            docInsert(" ")
         case .pinned:
             replaceWord(word, with: item.text)
         default:
             replaceWord(word, with: item.text)
             words.learn(item.text)
-            if lang == .english { textDocumentProxy.insertText(" ") }
+            if lang == .english { docInsert(" ") }
         }
         lastKeyID = "suggest"
         refreshSuggestions()
     }
 
-    /// 학습한 단어를 길게 누르면 그 단어만 지운다
+    /// 별표 칩을 길게 누르면 삭제 대기 상태가 된다. 3초 안에 다시 누르면 지워진다.
     @objc func suggestionLongPressed(_ g: UILongPressGestureRecognizer) {
         guard g.state == .began, let b = g.view as? UIButton, b.tag < suggestItems.count else { return }
-        words.remove(suggestItems[b.tag].text)
+        armedSuggestion = suggestItems[b.tag].text
         refreshSuggestions()
+        suggestArmTimer?.invalidate()
+        suggestArmTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
+            self?.armedSuggestion = nil
+            self?.refreshSuggestions()
+        }
     }
 }
