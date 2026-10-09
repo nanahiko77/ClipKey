@@ -58,8 +58,6 @@ final class KeyboardViewController: UIInputViewController {
     weak var pickerView: UIView?
     var previewSticker: String?
     var toolbarHeight: NSLayoutConstraint?
-    var pendingLines = 0
-    var lineMoving = false
     /// 추천 줄 자리에 대신 올리는 것 (단어 추가 입력 칸, 이모지 패널 탭)
     let barOverlay = UIView()
     lazy var koLanguage: String? = UITextChecker.availableLanguages.first { $0.hasPrefix("ko") }
@@ -1320,65 +1318,22 @@ final class KeyboardViewController: UIInputViewController {
         dismissKeyboard()
     }
 
-    /// 커서를 줄 단위로 옮긴다 (줄바꿈 기준). 같은 칸 위치를 지키고, 그 줄이 짧으면 줄 끝으로.
-    /// 키보드는 커서 앞뒤 글자를 일부만 볼 수 있어서 두 번에 나눠 옮긴다:
-    /// ① 지금 줄의 칸 수만 보고 옆 줄의 끝(위)·처음(아래)으로 간 뒤, ② 새로 읽어서 그 줄 안에서 칸을 맞춘다.
+    /// 간격 키를 위로 밀면 지금 줄의 처음, 아래로 밀면 지금 줄의 끝으로 (줄바꿈 기준).
+    /// 키보드는 화면의 줄 모양을 알 수 없어서, 칸 위치를 맞춰 윗줄·아랫줄로 가는 것보다 이쪽이 늘 정확하다.
     func moveCursorLines(_ lines: Int) {
+        guard lines != 0 else { return }
         resetComposer()
-        pendingLines += lines
-        guard !lineMoving else { return }
-        stepLineMove()
-    }
-
-    private func stepLineMove() {
-        guard pendingLines != 0 else {
-            lineMoving = false
-            return
-        }
-        lineMoving = true
-        let up = pendingLines < 0
-        pendingLines += up ? 1 : -1
         let proxy = textDocumentProxy
-        let before = proxy.documentContextBeforeInput ?? ""
-        let after = proxy.documentContextAfterInput ?? ""
-        let col = before.lastIndex(of: "\n").map { before.distance(from: before.index(after: $0), to: before.endIndex) } ?? before.count
-        if up {
-            guard before.contains("\n") else {
-                proxy.adjustTextPosition(byCharacterOffset: -before.count)      // 첫 줄: 맨 앞으로
-                finishLineStep()
-                return
-            }
-            proxy.adjustTextPosition(byCharacterOffset: -(col + 1))             // 윗줄 끝
+        if lines < 0 {
+            let before = proxy.documentContextBeforeInput ?? ""
+            let col = before.lastIndex(of: "\n").map { before.distance(from: before.index(after: $0), to: before.endIndex) } ?? before.count
+            if col > 0 { proxy.adjustTextPosition(byCharacterOffset: -col) }
         } else {
-            guard let nl = after.firstIndex(of: "\n") else {
-                proxy.adjustTextPosition(byCharacterOffset: after.count)        // 마지막 줄: 맨 끝으로
-                finishLineStep()
-                return
-            }
-            proxy.adjustTextPosition(byCharacterOffset: after.distance(from: after.startIndex, to: nl) + 1)  // 아랫줄 처음
+            let after = proxy.documentContextAfterInput ?? ""
+            let rest = after.firstIndex(of: "\n").map { after.distance(from: after.startIndex, to: $0) } ?? after.count
+            if rest > 0 { proxy.adjustTextPosition(byCharacterOffset: rest) }
         }
-        // 앱이 커서 앞뒤 글자를 새로 알려 줄 시간을 조금 준다
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self = self else { return }
-            let b = proxy.documentContextBeforeInput ?? ""
-            let a = proxy.documentContextAfterInput ?? ""
-            if up {
-                // 지금 윗줄 끝: 줄 길이 = 줄바꿈 뒤 글자 수
-                let len = b.lastIndex(of: "\n").map { b.distance(from: b.index(after: $0), to: b.endIndex) } ?? b.count
-                if len > col { proxy.adjustTextPosition(byCharacterOffset: -(len - col)) }
-            } else {
-                // 지금 아랫줄 처음: 줄 길이 = 다음 줄바꿈까지
-                let len = a.firstIndex(of: "\n").map { a.distance(from: a.startIndex, to: $0) } ?? a.count
-                let move = min(col, len)
-                if move > 0 { proxy.adjustTextPosition(byCharacterOffset: move) }
-            }
-            self.finishLineStep()
-        }
-    }
-
-    private func finishLineStep() {
         ctxCache = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in self?.stepLineMove() }
     }
 
     @objc func cursorLeft() {
