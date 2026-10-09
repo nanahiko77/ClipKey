@@ -580,8 +580,8 @@ final class KeyboardViewController: UIInputViewController {
     /// 간격을 눌렀을 때 자동으로 바꿀 단어. 한글은 확실한 후보만 바꾸고, 나머지는 추천 칸에만 보여 준다.
     func autoCorrection(for word: String) -> String? {
         guard settings.correctMode == 2, panel == .keys, !adding, word != skipCorrection else { return nil }
-        // 직접 넣은 단어를 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
-        if words.matches(word).contains(where: { words.isManual($0) }) { return nil }
+        // 내가 쓰는 말(직접 넣은 단어, 자주 친 단어)을 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
+        if !words.matches(word).isEmpty { return nil }
         if lang == .english { return correction(for: word) }
         guard let best = koCandidates(word).first, best.sure else { return nil }
         return best.text
@@ -839,9 +839,11 @@ final class KeyboardViewController: UIInputViewController {
             }
             return items
         }
-        // 순서: 직접 넣은 단어 → 맞춤법(교정, 사전) → 자주 친 단어 → 고정한 클립
+        // 순서: 직접 넣은 단어 → 자주 친 단어 → 맞춤법(교정, 사전) → 고정한 클립
+        // 내가 쓰는 말(이름 등)은 사전 추천보다 늘 앞에 둔다. 초성 하나(ㅇ)나 첫 글자(유)만 쳐도 맞춘다.
         let matched = words.matches(word)
         for w in matched where words.isManual(w) { add(w, .learned) }
+        for w in matched where !words.isManual(w) { add(w, .learned) }
         let fixes = corrections(for: word)
         if let first = fixes.first {
             if autoCorrection(for: word) == first {
@@ -866,7 +868,6 @@ final class KeyboardViewController: UIInputViewController {
             let found = checker.completions(forPartialWordRange: range, in: word, language: language) ?? []
             for c in found.prefix(3 - dictCount) { add(c, .dict) }
         }
-        for w in matched where !words.isManual(w) { add(w, .learned) }
         let lower = word.lowercased()
         for c in store.clips where c.pinned && c.text.count > word.count && c.text.lowercased().hasPrefix(lower) {
             add(c.text, .pinned)
@@ -943,9 +944,10 @@ final class KeyboardViewController: UIInputViewController {
             left = o
             rest.removeAll { $0 == o }
         }
-        // 가운데: 직접 넣은 단어 → 고친 단어 → 첫째 순서
+        // 가운데: 직접 넣은 단어 → 자주 친 단어 → 고친 단어 → 첫째 순서
         let manual = rest.first { items[$0].kind == .learned && words.isManual(items[$0].text) }
-        let center = manual ?? rest.first { items[$0].kind == .correction } ?? rest.first
+        let learned = rest.first { items[$0].kind == .learned }
+        let center = manual ?? learned ?? rest.first { items[$0].kind == .correction } ?? rest.first
         if let c = center { rest.removeAll { $0 == c } }
         if left == nil, !rest.isEmpty { left = rest.removeFirst() }
         let right = rest.isEmpty ? nil : rest.removeFirst()
