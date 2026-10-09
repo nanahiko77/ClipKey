@@ -312,6 +312,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingHeader("공통"),
             settingRow("화면 모드", segment(["시스템", "라이트", "다크"], selected: settings.themeMode, tag: 1)),
             settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
+            settingRow("키 누를 때 소리", toggle(settings.keySound, tag: 15)),
         ]
 
         let stack = UIStackView(arrangedSubviews: rows)
@@ -358,6 +359,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 12: settings.autoCap = s.isOn
         case 13: settings.autoCorrect = s.isOn
         case 14: settings.showArrows = s.isOn
+        case 15: settings.keySound = s.isOn
         default: break
         }
     }

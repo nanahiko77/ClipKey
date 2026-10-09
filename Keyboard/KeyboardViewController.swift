@@ -1,4 +1,5 @@
 import UIKit
+import AudioToolbox
 
 enum SuggestKind { case correction, original, learned, pinned, dict }
 
@@ -179,9 +180,14 @@ final class KeyboardViewController: UIInputViewController {
         refreshSuggestions()
     }
 
+    /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
     func haptic() {
-        guard settings.haptic else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if settings.haptic {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+        if settings.keySound {
+            AudioServicesPlaySystemSound(1104)     // 시스템 키보드 누름 소리
+        }
     }
 
     // MARK: - 클립보드 수집

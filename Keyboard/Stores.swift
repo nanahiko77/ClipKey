@@ -39,6 +39,11 @@ final class Settings {
         get { d.bool(forKey: "haptic") }
         set { d.set(newValue, forKey: "haptic") }
     }
+    /// 키를 누를 때 나는 소리. 아이폰 설정의 키보드 피드백과는 따로 동작한다.
+    var keySound: Bool {
+        get { d.bool(forKey: "keySound") }
+        set { d.set(newValue, forKey: "keySound") }
+    }
     var autoCap: Bool {
         get { d.bool(forKey: "autoCap") }
         set { d.set(newValue, forKey: "autoCap") }
