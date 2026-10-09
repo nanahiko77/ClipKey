@@ -84,6 +84,8 @@ final class KeyboardViewController: UIInputViewController {
     var correctionChipTimer: Timer?
     /// 조합 중 글자(marked text)를 마지막으로 바꾼 때. 그 직후의 커서 변화는 우리가 한 것으로 본다.
     var markEditTime = Date.distantPast
+    var proxyOps: [(UITextDocumentProxy) -> Void] = []
+    var proxyPaused = false
     // 한글 오타 교정은 뒤에서 계산한다
     let correctorQueue = DispatchQueue(label: "clipkey.corrector", qos: .userInitiated)
     let correctorGen = Generation()
@@ -481,6 +483,44 @@ final class KeyboardViewController: UIInputViewController {
         return ctx
     }
 
+    // MARK: 문서 바꾸기 줄 세우기 (실험: 조합 중 글자 표시)
+
+    /// 확정 뒤 잠깐 기다리는 동안 들어온 바꾸기를 모아 두었다가 순서대로 한다
+    func proxyDo(_ op: @escaping (UITextDocumentProxy) -> Void) {
+        if proxyPaused || !proxyOps.isEmpty {
+            proxyOps.append(op)
+        } else {
+            op(textDocumentProxy)
+        }
+    }
+
+    func proxyMark(_ text: String) {
+        markEditTime = Date()
+        proxyDo { $0.setMarkedText(text, selectedRange: NSRange(location: (text as NSString).length, length: 0)) }
+    }
+
+    /// 확정하고, 앱이 반영할 시간(0.03초)을 준다
+    func proxyUnmark() {
+        markEditTime = Date()
+        proxyDo { [weak self] proxy in
+            proxy.unmarkText()
+            self?.pauseProxy()
+        }
+    }
+
+    private func pauseProxy() {
+        proxyPaused = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            guard let self = self else { return }
+            self.proxyPaused = false
+            while !self.proxyOps.isEmpty, !self.proxyPaused {
+                let op = self.proxyOps.removeFirst()
+                op(self.textDocumentProxy)
+            }
+            self.markEditTime = Date()
+        }
+    }
+
     /// 조합 중 글자를 marked text 로 다룰지 (단어 추가 칸은 키보드 안의 글자라 해당 없음)
     var marked: Bool { settings.markedComposing && addBuffer == nil }
 
@@ -488,8 +528,8 @@ final class KeyboardViewController: UIInputViewController {
     func clearComposingText() {
         guard !composing.isEmpty else { return }
         if marked {
-            textDocumentProxy.setMarkedText("", selectedRange: NSRange(location: 0, length: 0))
-            markEditTime = Date()
+            proxyMark("")
+            proxyUnmark()
         } else {
             for _ in 0..<composing.count { docDelete() }
         }
@@ -501,7 +541,7 @@ final class KeyboardViewController: UIInputViewController {
             addBuffer?.append(s)
             updateAddField()
         } else {
-            textDocumentProxy.insertText(s)
+            proxyDo { $0.insertText(s) }
         }
     }
 
@@ -510,7 +550,7 @@ final class KeyboardViewController: UIInputViewController {
             if !b.isEmpty { addBuffer?.removeLast() }
             updateAddField()
         } else {
-            textDocumentProxy.deleteBackward()
+            proxyDo { $0.deleteBackward() }
         }
     }
 
@@ -612,17 +652,15 @@ final class KeyboardViewController: UIInputViewController {
         let newText = composer.text
         if marked {
             // 지웠다 다시 넣지 않고 조합 중 글자만 바꾼다 (사파리 웹 입력창의 커서 깜빡임을 막는다)
-            let proxy = textDocumentProxy
-            // 확정은 unmarkText 대신 insertText 로 한다. insertText 는 조합 중 글자를 바꿔 넣으며 조합을 끝낸다.
-            // (사파리 등에서는 unmarkText 가 바로 반영되지 않아, 다음 조합이 앞 글자를 덮어쓰는 일이 있었다)
+            // 실험: 확정(unmarkText) 뒤에는 앱이 반영할 시간을 잠깐 주고 다음 글자를 넣는다
             if !commit.isEmpty {
-                proxy.insertText(commit)
+                proxyMark(commit)
+                proxyUnmark()
             } else if newText.isEmpty, !composing.isEmpty {
-                proxy.setMarkedText("", selectedRange: NSRange(location: 0, length: 0))
+                proxyMark("")
+                proxyUnmark()
             }
-            if !newText.isEmpty {
-                proxy.setMarkedText(newText, selectedRange: NSRange(location: (newText as NSString).length, length: 0))
-            }
+            if !newText.isEmpty { proxyMark(newText) }
             composing = newText
             markEditTime = Date()
             return
@@ -636,7 +674,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 조합을 끝낸다. 문서의 글자는 그대로 둔다.
     func resetComposer() {
         if marked, !composing.isEmpty {
-            textDocumentProxy.insertText(composing)      // 조합 중 글자를 그대로 확정
+            proxyUnmark()      // 조합 중 글자를 그대로 확정
             markEditTime = Date()
         }
         lastCorrection = nil
@@ -819,7 +857,7 @@ final class KeyboardViewController: UIInputViewController {
             let t = composer.text
             if !t.isEmpty {
                 if marked {
-                    textDocumentProxy.setMarkedText(t, selectedRange: NSRange(location: (t as NSString).length, length: 0))
+                    proxyMark(t)
                     markEditTime = Date()
                 } else {
                     docInsert(t)
