@@ -91,6 +91,7 @@ final class KeyboardViewController: UIInputViewController {
     var koPending: String?
     var koCheckerWorks: Bool?
     var iosKnownCache: [String: Bool] = [:]
+    var iosGuessCache: [String: [KoCorrector.Candidate]] = [:]
     var spaceRepeat = false            // 간격을 방금 연달아 눌렀는지
     var armedSuggestion: String?       // 길게 눌러 삭제 대기 중인 추천 단어
     var suggestArmTimer: Timer?
@@ -882,7 +883,7 @@ final class KeyboardViewController: UIInputViewController {
         if lang == .english { return correction(for: word).map { [$0] } ?? [] }
         // 우리 사전은 작아서 합성어(숫자키 같은)를 오타로 볼 수 있다. 아이폰 사전이 맞다고 하면 고치지 않는다.
         if iosKnowsKorean(word) { return [] }
-        return koCandidates(word).map { $0.text }
+        return koAllCandidates(word).map { $0.text }
     }
 
     /// 한글 오타 후보. 계산이 무거워서 키를 칠 때는 뒤에서 계산하고, 끝나면 추천 줄을 다시 그린다.
@@ -952,6 +953,28 @@ final class KeyboardViewController: UIInputViewController {
                                              language: language).location != NSNotFound
     }
 
+    /// 우리 사전·내 단어 후보에 아이폰 맞춤법 검사기의 고칠 말(숫자키 같은 합성어)을 더한다.
+    /// 아이폰 후보도 자판에서 가까운 오타일 때만 쓴다 (엉뚱한 말로 바꾸지 않게).
+    func koAllCandidates(_ word: String, wait: Bool = false) -> [KoCorrector.Candidate] {
+        let base = koCandidates(word, wait: wait)
+        let ios = iosGuessCandidates(word)
+        return ios.isEmpty ? base : KoCorrector.merge(ios, base)
+    }
+
+    func iosGuessCandidates(_ word: String) -> [KoCorrector.Candidate] {
+        guard let language = koLanguage, word.count >= 2, KoCorrector.isHangulWord(word),
+              koCheckerWorks == true, !iosKnowsKorean(word) else { return [] }
+        if let cached = iosGuessCache[word] { return cached }
+        let range = NSRange(location: 0, length: (word as NSString).length)
+        let guesses = (checker.guesses(forWordRange: range, in: word, language: language) ?? [])
+            .filter { !$0.contains(" ") }
+            .prefix(5)
+        let found = KoCorrector.personal(word, words: Array(guesses), hangulLayout: settings.hangulLayout)
+        if iosGuessCache.count > 200 { iosGuessCache.removeAll() }
+        iosGuessCache[word] = found
+        return found
+    }
+
     func storeKo(_ key: String, _ value: [KoCorrector.Candidate]) {
         if koCache.count > 64 { koCache.removeAll() }
         koCache[key] = value
@@ -965,7 +988,7 @@ final class KeyboardViewController: UIInputViewController {
         if !words.matches(word).isEmpty { return nil }
         if lang == .english { return correction(for: word) }
         if iosKnowsKorean(word) { return nil }
-        guard let best = koCandidates(word, wait: wait).first, best.sure else { return nil }
+        guard let best = koAllCandidates(word, wait: wait).first, best.sure else { return nil }
         return best.text
     }
 
