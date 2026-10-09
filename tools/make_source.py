@@ -24,6 +24,11 @@ source = {
     "identifier": "com.ban.clipkey.source",
     "sourceURL": source_url,
     "website": repo_url,
+    # 소스 목록에 보이는 아이콘과 색 (앱 아이콘과 같게)
+    "iconURL": icon_url,
+    "tintColor": "3D3D3D",
+    "subtitle": "Ban 의 개인 키보드",
+    "description": "클립보드가 붙은 한글 키보드 ClipKey 를 받는 곳.",
     "apps": [{
         "name": "ClipKey",
         "bundleIdentifier": "com.ban.clipkey",

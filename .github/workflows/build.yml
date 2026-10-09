@@ -72,9 +72,11 @@ jobs:
           SIZE=$(stat -f%z ClipKey.ipa)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           NOTES=$(git log -1 --pretty=%s)
-          cp docs/icon.png icon.png
+          # 소스·앱 아이콘은 늘 앱 아이콘에서 만든다 (빌드마다 주소가 달라 SideStore 가 새 아이콘을 받는다)
+          sips -Z 512 App/Assets.xcassets/AppIcon.appiconset/icon-1024.png --out icon.png
+          cp icon.png docs/icon.png
           python3 tools/make_source.py "$VERSION" "$BUILD_NUMBER" "$DATE" \
-            "$BASE/download/$TAG/ClipKey.ipa" "$SIZE" "$BASE/latest/download/icon.png" "$NOTES" > source.json
+            "$BASE/download/$TAG/ClipKey.ipa" "$SIZE" "$BASE/download/$TAG/icon.png" "$NOTES" > source.json
           gh release create "$TAG" ClipKey.ipa source.json icon.png \
             --title "ClipKey $VERSION ($BUILD_NUMBER)" \
             --notes "$NOTES" \
