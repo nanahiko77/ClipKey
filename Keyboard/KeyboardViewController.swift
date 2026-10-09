@@ -76,6 +76,11 @@ final class KeyboardViewController: UIInputViewController {
     weak var dictValueLabel: UILabel?
     weak var dictCaptionLabel: UILabel?
     weak var dictButton: UIButton?
+    // 설정의 앱 버전 줄
+    var appUpdateCaption: (text: String, strong: Bool)?
+    var appUpdateBusy = false
+    weak var appCaptionLabel: UILabel?
+    weak var appButton: UIButton?
     var letterKeys: [KeyButton] = []
     weak var shiftKey: KeyButton?
 

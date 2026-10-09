@@ -6,14 +6,14 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.6"
+    MARKETING_VERSION: "1.7"
     CURRENT_PROJECT_VERSION: "8"
     TARGETED_DEVICE_FAMILY: "1,2"
 targets:
   ClipKey:
     type: application
     platform: iOS
-    sources: [App]
+    sources: [App, Shared]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ban.clipkey
@@ -37,6 +37,7 @@ targets:
         excludes: ["ko_dict.txt"]
       - path: Keyboard/ko_dict.txt
         buildPhase: resources
+      - path: Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ban.clipkey.keyboard

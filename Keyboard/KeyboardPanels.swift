@@ -373,7 +373,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
             settingRow("키 누를 때 소리", toggle(settings.keySound, tag: 15)),
             settingHeader("정보"),
-            settingRow("버전", valueLabel(appVersion)),
+            appVersionRow(),
             dictionaryRow(),
         ]
 
@@ -460,41 +460,103 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         KeyboardViewController.numberFormat.string(from: NSNumber(value: n)) ?? "\(n)"
     }
 
-    /// 맞춤법 사전 줄: 제목과 작은 설명, 단어 수, 받기/업데이트 버튼
-    func dictionaryRow() -> UIView {
+    /// 정보 줄: [제목 값 / 아래 설명] [버튼]. 버튼 폭을 같게 해서 오른쪽 끝을 맞춘다.
+    func infoRow(_ titleText: String, action: Selector) -> (row: UIView, value: UILabel, caption: UILabel, button: UIButton) {
         let title = UILabel()
-        title.text = "맞춤법 사전"
+        title.text = titleText
         title.font = .systemFont(ofSize: 15)
         title.textColor = theme.text
+        title.setContentHuggingPriority(.required, for: .horizontal)
+        let value = valueLabel("")
+        let top = UIStackView(arrangedSubviews: [title, value, UIView()])
+        top.axis = .horizontal
+        top.alignment = .firstBaseline
+        top.spacing = 6
+
         let caption = UILabel()
         caption.font = .systemFont(ofSize: 12)
         caption.textColor = theme.muted
-        caption.adjustsFontSizeToFitWidth = true
-        caption.minimumScaleFactor = 0.8
-        let texts = UIStackView(arrangedSubviews: [title, caption])
+        caption.lineBreakMode = .byTruncatingTail
+
+        let texts = UIStackView(arrangedSubviews: [top, caption])
         texts.axis = .vertical
-        texts.spacing = 2
+        texts.spacing = 3
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let value = valueLabel("")
-        let button = toolButton("업데이트", action: #selector(dictionaryButtonTapped))
+        let button = UIButton(type: .system)
         button.titleLabel?.font = .boldSystemFont(ofSize: 14)
+        button.layer.cornerRadius = 8
+        button.backgroundColor = theme.funcKey
+        button.setTitleColor(theme.text, for: .normal)
+        button.widthAnchor.constraint(equalToConstant: 104).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        button.addTarget(self, action: action, for: .touchUpInside)
 
-        let row = UIStackView(arrangedSubviews: [texts, value, button])
+        let row = UIStackView(arrangedSubviews: [texts, button])
         row.axis = .horizontal
         row.alignment = .center
-        row.spacing = 8
-        row.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        row.spacing = 12
+        row.isLayoutMarginsRelativeArrangement = true
+        row.layoutMargins = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+        row.heightAnchor.constraint(equalToConstant: 52).isActive = true
+        return (row, value, caption, button)
+    }
 
-        dictCaptionLabel = caption
-        dictValueLabel = value
-        dictButton = button
+    /// 맞춤법 사전 줄
+    func dictionaryRow() -> UIView {
+        let r = infoRow("맞춤법 사전", action: #selector(dictionaryButtonTapped))
+        dictCaptionLabel = r.caption
+        dictValueLabel = r.value
+        dictButton = r.button
         updateDictionaryRow()
         if KoDictionary.shared.info == nil {
             KoDictionary.shared.preload { [weak self] in self?.updateDictionaryRow() }
         }
-        return row
+        return r.row
+    }
+
+    /// 앱 버전 줄. 설정을 열면 한 번 저절로 새 버전을 확인한다.
+    func appVersionRow() -> UIView {
+        let r = infoRow("앱 버전", action: #selector(appUpdateTapped))
+        r.value.text = UpdateCheck.currentText
+        appCaptionLabel = r.caption
+        appButton = r.button
+        updateAppVersionRow()
+        if appUpdateCaption == nil { appUpdateTapped() }
+        return r.row
+    }
+
+    func updateAppVersionRow() {
+        guard let caption = appCaptionLabel, let button = appButton else { return }
+        let c = appUpdateCaption ?? ("", false)
+        caption.text = appUpdateBusy ? "확인하는 중…" : c.text
+        caption.font = c.strong && !appUpdateBusy ? .boldSystemFont(ofSize: 12) : .systemFont(ofSize: 12)
+        caption.textColor = c.strong && !appUpdateBusy ? theme.text : theme.muted
+        button.setTitle("업데이트 확인", for: .normal)
+        button.isEnabled = !appUpdateBusy
+        button.alpha = appUpdateBusy ? 0.5 : 1
+    }
+
+    @objc func appUpdateTapped() {
+        guard !appUpdateBusy else { return }
+        guard hasFullAccess else {
+            appUpdateCaption = ("전체 접근 허용을 켜야 확인할 수 있어요", false)
+            updateAppVersionRow()
+            return
+        }
+        appUpdateBusy = true
+        updateAppVersionRow()
+        UpdateCheck.check { [weak self] result in
+            guard let self = self else { return }
+            self.appUpdateBusy = false
+            switch result {
+            case .latest: self.appUpdateCaption = ("최신 버전이에요 · 방금 확인", false)
+            case .newer(let v): self.appUpdateCaption = ("새 버전 \(v.text) · SideStore에서 업데이트하세요", true)
+            case .failed(let why): self.appUpdateCaption = ("확인하지 못했어요 · " + why, false)
+            }
+            self.updateAppVersionRow()
+        }
     }
 
     func updateDictionaryRow() {
@@ -523,6 +585,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         }
         if let status = dictStatus { caption.text = status }
 
+        value.font = missing ? .boldSystemFont(ofSize: 14) : .systemFont(ofSize: 14)
         button.setTitle(dictBusy ? "받는 중" : (missing ? "사전 받기" : "업데이트"), for: .normal)
         button.isEnabled = !dictBusy && info != nil
         button.backgroundColor = missing ? theme.accent : theme.funcKey
