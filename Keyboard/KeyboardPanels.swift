@@ -641,6 +641,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             }
             self.updateDictionaryRow()
             KoCorrector.shared.reset()
+            self.koCache.removeAll()
             self.lastSuggestSignature = nil
         }
     }

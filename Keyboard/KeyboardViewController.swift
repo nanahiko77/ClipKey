@@ -84,6 +84,11 @@ final class KeyboardViewController: UIInputViewController {
     var correctionChipTimer: Timer?
     /// 조합 중 글자(marked text)를 마지막으로 바꾼 때. 그 직후의 커서 변화는 우리가 한 것으로 본다.
     var markEditTime = Date.distantPast
+    // 한글 오타 교정은 뒤에서 계산한다
+    let correctorQueue = DispatchQueue(label: "clipkey.corrector", qos: .userInitiated)
+    let correctorGen = Generation()
+    var koCache: [String: [KoCorrector.Candidate]] = [:]
+    var koPending: String?
     var spaceRepeat = false            // 간격을 방금 연달아 눌렀는지
     var armedSuggestion: String?       // 길게 눌러 삭제 대기 중인 추천 단어
     var suggestArmTimer: Timer?
@@ -776,7 +781,7 @@ final class KeyboardViewController: UIInputViewController {
             final = rep
             lastCorrection = (word, rep, separator)
             startCorrectionChip()
-        } else if separator == " ", settings.correctMode == 2, let fix = autoCorrection(for: word) {
+        } else if separator == " ", settings.correctMode == 2, let fix = autoCorrection(for: word, wait: true) {
             replaceWord(word, with: fix)
             final = fix
             lastCorrection = (word, fix, separator)
@@ -800,21 +805,62 @@ final class KeyboardViewController: UIInputViewController {
         return koCandidates(word).map { $0.text }
     }
 
-    func koCandidates(_ word: String) -> [KoCorrector.Candidate] {
-        let store = words
-        return KoCorrector.shared.corrections(for: word, hangulLayout: settings.hangulLayout) { w in
-            store.knows(w) || store.isManual(w)
+    /// 한글 오타 후보. 계산이 무거워서 키를 칠 때는 뒤에서 계산하고, 끝나면 추천 줄을 다시 그린다.
+    /// 그동안에는 빈 목록을 돌려준다 (키 입력을 막지 않는다).
+    /// wait: 간격을 눌러 바로 고쳐야 할 때는 기다려서 받는다.
+    func koCandidates(_ word: String, wait: Bool = false) -> [KoCorrector.Candidate] {
+        // 학습한 단어와 직접 넣은 단어는 고치지 않는다 (단어 저장소는 이 화면 쪽에서만 읽는다)
+        if words.knows(word) || words.isManual(word) { return [] }
+        let layout = settings.hangulLayout
+        let key = "\(layout)|\(word)"
+        if let cached = koCache[key] { return cached }
+        if wait {
+            correctorGen.bump()                    // 뒤에서 돌던 계산은 멈춘다
+            let r = correctorQueue.sync {
+                KoCorrector.shared.corrections(for: word, hangulLayout: layout, protected: { _ in false })
+            } ?? []
+            storeKo(key, r)
+            return r
         }
+        guard koPending != key else { return [] }
+        koPending = key
+        let gen = correctorGen.bump()
+        let generation = correctorGen
+        // 빠르게 연타하는 중에는 건너뛰고, 손이 잠깐 멈췄을 때 계산한다
+        correctorQueue.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            guard generation.current == gen else {
+                DispatchQueue.main.async { if self?.koPending == key { self?.koPending = nil } }
+                return
+            }
+            let r = KoCorrector.shared.corrections(for: word, hangulLayout: layout, protected: { _ in false },
+                                                   shouldStop: { generation.current != gen })
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if self.koPending == key { self.koPending = nil }
+                guard let r = r else { return }
+                self.storeKo(key, r)
+                if self.currentWord() == word {
+                    self.lastSuggestSignature = nil
+                    self.refreshSuggestions()
+                }
+            }
+        }
+        return []
+    }
+
+    func storeKo(_ key: String, _ value: [KoCorrector.Candidate]) {
+        if koCache.count > 64 { koCache.removeAll() }
+        koCache[key] = value
     }
 
     /// 간격을 눌렀을 때 자동으로 바꿀 단어. 한글은 확실한 후보만 바꾸고, 나머지는 추천 칸에만 보여 준다.
-    func autoCorrection(for word: String) -> String? {
+    func autoCorrection(for word: String, wait: Bool = false) -> String? {
         guard settings.correctMode == 2, panel == .keys, !adding, fieldKind == .normal, word != skipCorrection else { return nil }
         if let choice = settings.correctionChoices[word] { return choice == word ? nil : choice }
         // 내가 쓰는 말(직접 넣은 단어, 자주 친 단어)을 치는 중이면 바꾸지 않는다 (그 단어가 최우선)
         if !words.matches(word).isEmpty { return nil }
         if lang == .english { return correction(for: word) }
-        guard let best = koCandidates(word).first, best.sure else { return nil }
+        guard let best = koCandidates(word, wait: wait).first, best.sure else { return nil }
         return best.text
     }
 
@@ -1561,5 +1607,25 @@ final class KeyboardViewController: UIInputViewController {
             self?.armedSuggestion = nil
             self?.refreshSuggestions()
         }
+    }
+}
+
+/// 계산 차례 번호. 새 글자가 들어올 때마다 올라가고, 뒤에서 도는 계산은 번호가 바뀌면 멈춘다.
+final class Generation {
+    private var value = 0
+    private let lock = NSLock()
+
+    var current: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    @discardableResult
+    func bump() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
     }
 }

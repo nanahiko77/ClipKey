@@ -36,6 +36,7 @@ final class KoCorrector {
 
     private var cacheKey = ""
     private var cacheValue: [Candidate] = []
+    private let cacheLock = NSLock()
 
     // MARK: 자모
 
@@ -151,19 +152,31 @@ final class KoCorrector {
 
     /// 고칠 후보. 앞이 가장 그럴듯한 것. 바른 말이거나 고칠 것이 없으면 빈 배열.
     /// - protected: 고치면 안 되는 단어인지 (학습한 단어, 직접 넣은 단어)
+    /// - shouldStop: 더 새 글자가 들어와서 이 계산이 필요 없어졌는지. true 가 되면 nil 을 돌려준다.
+    /// 백그라운드에서 불러도 된다 (사전은 잠금으로 읽고, 지난 결과 기억도 잠금으로 지킨다).
     func corrections(for word: String, hangulLayout: Int, limit: Int = 2,
-                     protected: (String) -> Bool) -> [Candidate] {
+                     protected: (String) -> Bool, shouldStop: () -> Bool = { false }) -> [Candidate]? {
         guard word.count >= 2, KoCorrector.isHangulWord(word), !protected(word) else { return [] }
         let key = "\(hangulLayout)|\(word)"
-        if key == cacheKey { return cacheValue }
+        cacheLock.lock()
+        if key == cacheKey {
+            let v = cacheValue
+            cacheLock.unlock()
+            return v
+        }
+        cacheLock.unlock()
         guard let d = KoDictionary.shared.snapshot() else { return [] }
-        let result = compute(word, d, keys: hangulLayout == 0 ? KoCorrector.nara : KoCorrector.dubeol, limit: limit)
+        guard let result = compute(word, d, keys: hangulLayout == 0 ? KoCorrector.nara : KoCorrector.dubeol,
+                                   limit: limit, shouldStop: shouldStop) else { return nil }
+        cacheLock.lock()
         cacheKey = key
         cacheValue = result
+        cacheLock.unlock()
         return result
     }
 
-    private func compute(_ word: String, _ d: KoDictionary.Data_, keys: [UInt16: (Double, Double)], limit: Int) -> [Candidate] {
+    private func compute(_ word: String, _ d: KoDictionary.Data_, keys: [UInt16: (Double, Double)], limit: Int,
+                         shouldStop: () -> Bool) -> [Candidate]? {
         var scores: [String: (Double, Bool)] = [:]
         func offer(_ c: String, _ score: Double, sure: Bool) {
             guard c != word else { return }
@@ -207,7 +220,9 @@ final class KoCorrector {
             // 두 글자 이하(자모 6개 이하)는 자동으로 바꾸지 않고 추천만 한다.
             let sureCut = hj.count <= 6 ? -1.0 : 1.0
             for (firstJamo, list) in d.byFirstJamo where KoCorrector.cost(firstJamo, first, keys) <= 0.5 {
-                for index in list {
+                if shouldStop() { return nil }
+                for (n, index) in list.enumerated() {
+                    if n & 1023 == 1023, shouldStop() { return nil }
                     let fj = d.flatJamo[index]
                     if abs(fj.count - hj.count) > 2 { continue }
                     let form = d.flat[index]
@@ -227,7 +242,9 @@ final class KoCorrector {
 
     /// 사전을 새로 받았을 때 지난 결과를 버린다
     func reset() {
+        cacheLock.lock()
         cacheKey = ""
         cacheValue = []
+        cacheLock.unlock()
     }
 }

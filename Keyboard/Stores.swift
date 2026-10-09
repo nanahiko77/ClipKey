@@ -34,9 +34,15 @@ final class Settings {
     // MARK: 내가 고른 교정
 
     /// 친 글자 → 내가 고른 단어. 같은 글자를 다시 치면 이 단어로 고친다. 같은 글자면 "고치지 마".
+    /// 키를 칠 때마다 읽으므로 처음 한 번만 저장소에서 꺼내고 메모리에 들고 있는다
+    private lazy var choicesCache: [String: String] =
+        (d.dictionary(forKey: "correctionChoices") as? [String: String]) ?? [:]
     var correctionChoices: [String: String] {
-        get { (d.dictionary(forKey: "correctionChoices") as? [String: String]) ?? [:] }
-        set { d.set(newValue, forKey: "correctionChoices") }
+        get { choicesCache }
+        set {
+            choicesCache = newValue
+            d.set(newValue, forKey: "correctionChoices")
+        }
     }
 
     func rememberChoice(typed: String, chosen: String) {
