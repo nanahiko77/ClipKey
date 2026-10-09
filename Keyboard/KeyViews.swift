@@ -621,6 +621,53 @@ final class ClipCell: UITableViewCell {
     @objc private func confirmTapped() { onConfirm?() }
 }
 
+// MARK: - 설정 묶음의 누르는 줄
+
+/// iOS 설정처럼 줄 전체를 누르면 다음 화면으로 가는 줄: [제목 … 값 ›]
+final class GroupNavRow: UIControl {
+    private let pressed: UIColor
+
+    init(title: String, value: String?, theme: Theme) {
+        pressed = theme.divider.withAlphaComponent(0.45)
+        super.init(frame: .zero)
+        let t = UILabel()
+        t.text = title
+        t.font = .systemFont(ofSize: 15)
+        t.textColor = theme.text
+        let v = UILabel()
+        v.text = value
+        v.font = .systemFont(ofSize: 15)
+        v.textColor = theme.muted
+        v.setContentHuggingPriority(.required, for: .horizontal)
+        let chev = UIImageView(image: Icon.image("chevron.right", size: 13, line: 2.4))
+        chev.tintColor = theme.muted.withAlphaComponent(0.6)
+        chev.contentMode = .center
+        chev.setContentHuggingPriority(.required, for: .horizontal)
+        let stack = UIStackView(arrangedSubviews: [t, v, chev])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 6
+        stack.isUserInteractionEnabled = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: 44),
+        ])
+        accessibilityLabel = title
+        accessibilityTraits = .button
+        isAccessibilityElement = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var isHighlighted: Bool {
+        didSet { backgroundColor = isHighlighted ? pressed : .clear }
+    }
+}
+
 // MARK: - 스크롤 영역
 
 /// 버튼·스위치·구분 선택 위에서 손가락을 대고 밀어도 스크롤되게 한다.

@@ -342,14 +342,130 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         return row
     }
 
-    /// 설정 묶음의 제목
-    func settingHeader(_ title: String) -> UIView {
+    // MARK: iOS 설정 모양 묶음 (작은 회색 소제목 + 둥근 카드 + 아래 설명)
+
+    /// 카드 안 줄 글자와 같은 들여쓰기
+    static let groupIndent: CGFloat = 16
+
+    /// 묶음 위 작은 회색 소제목
+    func groupCaption(_ title: String) -> UIView {
         let l = UILabel()
         l.text = title
-        l.font = .boldSystemFont(ofSize: 16)
-        l.textColor = theme.text
-        l.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        return l
+        l.font = .systemFont(ofSize: 13)
+        l.textColor = theme.muted
+        let box = UIView()
+        l.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.topAnchor.constraint(equalTo: box.topAnchor),
+            l.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -6),
+            l.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: KeyboardViewController.groupIndent),
+            l.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -KeyboardViewController.groupIndent),
+        ])
+        return box
+    }
+
+    /// 묶음 아래 작은 설명
+    func groupFooter(_ text: String) -> UIView {
+        let l = UILabel()
+        l.text = text
+        l.numberOfLines = 0
+        l.font = .systemFont(ofSize: 12)
+        l.textColor = theme.muted
+        let box = UIView()
+        l.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.topAnchor.constraint(equalTo: box.topAnchor, constant: 6),
+            l.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            l.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: KeyboardViewController.groupIndent),
+            l.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -KeyboardViewController.groupIndent),
+        ])
+        return box
+    }
+
+    /// 줄들을 둥근 카드로 묶는다. 줄 사이에는 왼쪽을 들여 쓴 구분선.
+    func groupCard(_ rows: [UIView]) -> UIView {
+        let card = UIView()
+        card.backgroundColor = theme.row
+        card.layer.cornerRadius = 12
+        card.clipsToBounds = true
+        let stack = UIStackView()
+        stack.axis = .vertical
+        for (i, r) in rows.enumerated() {
+            let wrap = UIView()
+            r.translatesAutoresizingMaskIntoConstraints = false
+            wrap.addSubview(r)
+            let tappable = r is GroupNavRow
+            NSLayoutConstraint.activate([
+                r.topAnchor.constraint(equalTo: wrap.topAnchor, constant: tappable ? 0 : 2),
+                r.bottomAnchor.constraint(equalTo: wrap.bottomAnchor, constant: tappable ? 0 : -2),
+                r.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: tappable ? 0 : KeyboardViewController.groupIndent),
+                r.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: tappable ? 0 : -12),
+                wrap.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            ])
+            if i < rows.count - 1 {
+                let line = UIView()
+                line.backgroundColor = theme.divider.withAlphaComponent(0.7)
+                line.translatesAutoresizingMaskIntoConstraints = false
+                wrap.addSubview(line)
+                NSLayoutConstraint.activate([
+                    line.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: KeyboardViewController.groupIndent),
+                    line.trailingAnchor.constraint(equalTo: wrap.trailingAnchor),
+                    line.bottomAnchor.constraint(equalTo: wrap.bottomAnchor),
+                    line.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+                ])
+            }
+            stack.addArrangedSubview(wrap)
+        }
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+        ])
+        return card
+    }
+
+    /// 카드 안에서 위아래 여백을 더 주는 줄 (슬라이더처럼 여러 줄인 것)
+    func padded(_ v: UIView, _ inset: CGFloat = 6) -> UIView {
+        let box = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(v)
+        NSLayoutConstraint.activate([
+            v.topAnchor.constraint(equalTo: box.topAnchor, constant: inset),
+            v.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -inset),
+            v.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            v.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+        ])
+        return box
+    }
+
+    /// 줄 전체를 누르면 들어가는 줄: [제목 … 값 ›]
+    func navRow(_ title: String, value: String?, action: Selector) -> GroupNavRow {
+        let row = GroupNavRow(title: title, value: value, theme: theme)
+        row.addTarget(self, action: action, for: .touchUpInside)
+        return row
+    }
+
+    /// 소제목, 카드, 설명을 차례로 세로로 쌓는다. 묶음 사이는 넓게 띄운다.
+    func groupedStack(_ groups: [(title: String?, rows: [UIView], footer: String?)]) -> UIStackView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        for (i, g) in groups.enumerated() {
+            if let t = g.title { stack.addArrangedSubview(groupCaption(t)) }
+            let card = groupCard(g.rows)
+            stack.addArrangedSubview(card)
+            var last: UIView = card
+            if let f = g.footer {
+                last = groupFooter(f)
+                stack.addArrangedSubview(last)
+            }
+            if i < groups.count - 1 { stack.setCustomSpacing(22, after: last) }
+        }
+        return stack
     }
 
     func segment(_ items: [String], selected: Int, tag: Int) -> UISegmentedControl {
@@ -373,56 +489,47 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         let counts = [20, 50, 100]
         let countIndex = counts.firstIndex(of: settings.maxClips) ?? 1
 
-        let manage = toolButton("단어 관리", action: #selector(openWords))
-        manage.titleLabel?.font = .boldSystemFont(ofSize: 14)
-        let clear = toolButton("모두 지우기", color: theme.danger, action: #selector(clearWordsTapped(_:)))
-        clear.titleLabel?.font = .boldSystemFont(ofSize: 14)
-        let wordButtons = hstack([manage, clear], spacing: 6, equal: false)
+        let wordCount = words.manualWords.count + words.learnedWords.count
 
-        let rows: [UIView] = [
-            settingHeader("자판"),
-            settingRow("한글 자판", segment(["나랏글", "두벌식"], selected: settings.hangulLayout, tag: 0)),
-            settingRow("보조키 표시 (꾹 눌러 숫자·기호)", toggle(settings.naraHints, tag: 10)),
-            settingRow("키 글자 크기", segment(["작게", "보통", "크게"], selected: settings.keyFontSize, tag: 5)),
-            settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
-            settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
-            settingHeader("입력"),
-            settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
-            sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
-                      min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1),
-            sliderRow("길게 누르기 시간", note: "보조 글자 말풍선과 반복 입력이 시작되는 시간 · 최소 0.3초",
-                      min: Float(Settings.longPressRange.lowerBound), max: Float(Settings.longPressRange.upperBound),
-                      value: Float(settings.longPressTime), low: "짧게", high: "길게", tag: 2),
-            settingHeader("상단바"),
-            settingRow("상단바 꾸미기", openToolbarEditButton()),
-            settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
-            settingRow("단어 관리", wordButtons),
-            settingHeader("클립보드"),
-            settingRow("기록 보관 개수", segment(["20", "50", "100"], selected: countIndex, tag: 2)),
-            settingRow("사진도 저장 (최근 10장)", toggle(settings.savePhotos, tag: 16)),
-            settingHeader("공통"),
-            settingRow("화면 모드", segment(["시스템", "라이트", "다크"], selected: settings.themeMode, tag: 1)),
-            settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
-            settingRow("키 누를 때 소리", toggle(settings.keySound, tag: 15)),
-            settingHeader("정보"),
-            appVersionRow(),
-            dictionaryRow(),
-        ]
-
-        let stack = UIStackView(arrangedSubviews: rows)
-        stack.axis = .vertical
-        stack.spacing = 2
+        let stack = groupedStack([
+            ("자판", [
+                settingRow("한글 자판", segment(["나랏글", "두벌식"], selected: settings.hangulLayout, tag: 0)),
+                settingRow("보조키 표시 (꾹 눌러 숫자·기호)", toggle(settings.naraHints, tag: 10)),
+                settingRow("키 글자 크기", segment(["작게", "보통", "크게"], selected: settings.keyFontSize, tag: 5)),
+                settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
+                settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
+            ], nil),
+            ("입력", [
+                settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
+                padded(sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
+                                 min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1)),
+                padded(sliderRow("길게 누르기 시간", note: "보조 글자 말풍선과 반복 입력이 시작되는 시간 · 최소 0.3초",
+                                 min: Float(Settings.longPressRange.lowerBound), max: Float(Settings.longPressRange.upperBound),
+                                 value: Float(settings.longPressTime), low: "짧게", high: "길게", tag: 2)),
+            ], nil),
+            ("상단바", [
+                navRow("상단바 꾸미기", value: nil, action: #selector(openToolbarEdit)),
+                settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
+                navRow("단어 관리", value: wordCount > 0 ? "\(formatted(wordCount))개" : nil, action: #selector(openWords)),
+            ], nil),
+            ("클립보드", [
+                settingRow("기록 보관 개수", segment(["20", "50", "100"], selected: countIndex, tag: 2)),
+                settingRow("사진도 저장 (최근 10장)", toggle(settings.savePhotos, tag: 16)),
+            ], nil),
+            ("공통", [
+                settingRow("화면 모드", segment(["시스템", "라이트", "다크"], selected: settings.themeMode, tag: 1)),
+                settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
+                settingRow("키 누를 때 소리", toggle(settings.keySound, tag: 15)),
+            ], nil),
+            ("정보", [appVersionRow(), dictionaryRow()], nil),
+        ])
         stack.translatesAutoresizingMaskIntoConstraints = false
-        // 묶음과 묶음 사이는 넓게 띄운다
-        for i in 1..<rows.count where rows[i] is UILabel {
-            stack.setCustomSpacing(18, after: rows[i - 1])
-        }
 
         let scroll = PanelScrollView(frame: .zero)
         pinEdges(scroll, in: keyArea)
         scroll.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 6),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 12),
             stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 10),
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -10),
@@ -743,7 +850,21 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     func buildToolbarEdit() {
         let list = ToolbarEditList(settings: settings, theme: theme)
         toolbarEditList = list
-        pinEdges(list.table, in: keyArea)
+        // 미리 보기는 위에 고정하고, 아래 목록만 스크롤한다
+        let header = list.header
+        header.translatesAutoresizingMaskIntoConstraints = false
+        list.table.translatesAutoresizingMaskIntoConstraints = false
+        keyArea.addSubview(header)
+        keyArea.addSubview(list.table)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: keyArea.topAnchor),
+            header.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor),
+            list.table.topAnchor.constraint(equalTo: header.bottomAnchor),
+            list.table.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor),
+            list.table.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor),
+            list.table.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor),
+        ])
     }
 
     @objc func openWords() {
@@ -752,7 +873,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     @objc func clearWordsTapped(_ sender: UIButton) {
-        guard confirmed(sender, title: "삭제") else { return }
+        guard confirmed(sender, title: "한 번 더 누르면 모두 삭제") else { return }
         words.clear()
         nextWords.clear()
         if panel == .words { buildBody() }
@@ -773,21 +894,50 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         let scroll = PanelScrollView(frame: .zero)
         pinEdges(scroll, in: keyArea)
         let full = keyArea.bounds.width > 0 ? keyArea.bounds.width : UIScreen.main.bounds.width
-        let left: CGFloat = 8
-        let right = full - 8
-        var y: CGFloat = 6
+        // 설정 화면과 같은 모양: 작은 회색 소제목, 둥근 카드 안에 단어 칩, 카드 아래 설명
+        let cardLeft: CGFloat = 10
+        let cardRight = full - 10
+        let left = cardLeft + 10
+        let right = cardRight - 10
+        let indent = cardLeft + KeyboardViewController.groupIndent
+        var y: CGFloat = 12
 
-        func header(_ title: String, _ note: String) {
-            let l = UILabel(frame: CGRect(x: left + 2, y: y, width: right - left, height: 20))
-            let s = NSMutableAttributedString(string: title, attributes: [.font: UIFont.boldSystemFont(ofSize: 14), .foregroundColor: theme.text])
-            s.append(NSAttributedString(string: "  " + note, attributes: [.font: UIFont.systemFont(ofSize: 12), .foregroundColor: theme.muted]))
-            l.attributedText = s
+        func caption(_ title: String) {
+            let l = UILabel(frame: CGRect(x: indent, y: y, width: full - indent * 2, height: 16))
+            l.text = title
+            l.font = .systemFont(ofSize: 13)
+            l.textColor = theme.muted
             scroll.addSubview(l)
-            y += 26
+            y += 22
         }
 
-        func chips(_ items: [(word: String, count: Int?)], startIndex: Int, manual: Bool) {
+        func footer(_ text: String) {
+            let l = UILabel(frame: CGRect(x: indent, y: y + 6, width: full - indent * 2, height: 15))
+            l.text = text
+            l.font = .systemFont(ofSize: 12)
+            l.textColor = theme.muted
+            l.adjustsFontSizeToFitWidth = true
+            l.minimumScaleFactor = 0.8
+            scroll.addSubview(l)
+            y += 21
+        }
+
+        /// 카드를 그리고 그 안에 내용을 놓는다. content 는 카드 안 y 를 받아 다 쓴 뒤의 y 를 돌려준다.
+        func card(_ content: (CGFloat) -> CGFloat) {
+            let top = y
+            let c = UIView()
+            c.backgroundColor = theme.row
+            c.layer.cornerRadius = 12
+            scroll.addSubview(c)
+            let end = content(top + 10)
+            c.frame = CGRect(x: cardLeft, y: top, width: cardRight - cardLeft, height: end - top + 10)
+            scroll.sendSubviewToBack(c)
+            y = end + 10
+        }
+
+        func chips(_ items: [(word: String, count: Int?)], startIndex: Int, manual: Bool, from startY: CGFloat) -> CGFloat {
             var x = left
+            var cy = startY
             for (offset, item) in items.enumerated() {
                 let index = startIndex + offset
                 let label = UILabel()
@@ -810,10 +960,10 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 let chipWidth = 10 + starW + textWidth + extra + 6 + promoteW + 32
                 if x + chipWidth > right, x > left {
                     x = left
-                    y += 42
+                    cy += 42
                 }
-                let chip = UIView(frame: CGRect(x: x, y: y, width: chipWidth, height: 36))
-                chip.backgroundColor = theme.row
+                let chip = UIView(frame: CGRect(x: x, y: cy, width: chipWidth, height: 36))
+                chip.backgroundColor = theme.bg
                 chip.layer.cornerRadius = 18
                 var cx: CGFloat = 10
                 if manual {
@@ -835,7 +985,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                     up.frame = CGRect(x: chipWidth - 64, y: 4, width: 28, height: 28)
                     up.setImage(Icon.image("star.outline", size: 14, line: 2), for: .normal)
                     up.tintColor = theme.muted
-                    up.backgroundColor = theme.bg
+                    up.backgroundColor = theme.row
                     up.layer.cornerRadius = 14
                     up.tag = index
                     up.accessibilityLabel = "직접 넣은 단어로 옮기기"
@@ -846,7 +996,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 del.frame = CGRect(x: chipWidth - 32, y: 4, width: 28, height: 28)
                 del.setImage(Icon.image("xmark", size: 14, line: 2.5), for: .normal)
                 del.tintColor = theme.text
-                del.backgroundColor = theme.bg
+                del.backgroundColor = theme.row
                 del.layer.cornerRadius = 14
                 del.tag = index
                 del.accessibilityLabel = "이 단어 지우기"
@@ -855,23 +1005,50 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 scroll.addSubview(chip)
                 x += chipWidth + 6
             }
-            y += 48
+            return cy + 36
         }
 
-        header("직접 넣은 단어", "\(manual.count)개 · 늘 맨 먼저 추천")
-        if manual.isEmpty {
-            let l = UILabel(frame: CGRect(x: left + 2, y: y, width: right - left, height: 20))
-            l.text = "상단바의 + 나 '단어 추가'로 넣을 수 있습니다."
-            l.font = .systemFont(ofSize: 13)
-            l.textColor = theme.muted
-            scroll.addSubview(l)
-            y += 30
-        } else {
-            chips(manual.map { ($0, nil) }, startIndex: 0, manual: true)
+        caption("직접 넣은 단어 · \(manual.count)개")
+        card { top in
+            if manual.isEmpty {
+                let l = UILabel(frame: CGRect(x: indent, y: top, width: full - indent * 2, height: 24))
+                l.text = "상단바의 + 나 '단어 추가'로 넣을 수 있습니다."
+                l.font = .systemFont(ofSize: 14)
+                l.textColor = theme.muted
+                scroll.addSubview(l)
+                return top + 24
+            }
+            return chips(manual.map { ($0, nil) }, startIndex: 0, manual: true, from: top)
         }
-        header("자주 친 단어", "\(learned.count)개 · ☆ 를 누르면 위로 옮김")
-        chips(learned.map { ($0.word, Optional($0.count)) }, startIndex: manual.count, manual: false)
-        scroll.contentSize = CGSize(width: full, height: y + 8)
+        footer("늘 맨 먼저 추천합니다")
+        y += 22
+        caption("자주 친 단어 · \(learned.count)개")
+        if learned.isEmpty {
+            card { top in
+                let l = UILabel(frame: CGRect(x: indent, y: top, width: full - indent * 2, height: 24))
+                l.text = "같은 단어를 다섯 번 이상 치면 여기에 나옵니다."
+                l.font = .systemFont(ofSize: 14)
+                l.textColor = theme.muted
+                scroll.addSubview(l)
+                return top + 24
+            }
+        } else {
+            card { top in chips(learned.map { ($0.word, Optional($0.count)) }, startIndex: manual.count, manual: false, from: top) }
+            footer("☆ 를 누르면 직접 넣은 단어로 옮깁니다")
+        }
+        y += 22
+        // 모두 지우기: 설정 첫 화면에서 빼서 여기 맨 아래로 (잘못 누르기 어렵게, 두 번 눌러야 지움)
+        let clear = UIButton(type: .system)
+        clear.frame = CGRect(x: cardLeft, y: y, width: cardRight - cardLeft, height: 44)
+        clear.backgroundColor = theme.row
+        clear.layer.cornerRadius = 12
+        clear.setTitle("단어 모두 지우기", for: .normal)
+        clear.setTitleColor(theme.danger, for: .normal)
+        clear.titleLabel?.font = .systemFont(ofSize: 15)
+        clear.addTarget(self, action: #selector(clearWordsTapped(_:)), for: .touchUpInside)
+        scroll.addSubview(clear)
+        y += 44
+        scroll.contentSize = CGSize(width: full, height: y + 14)
     }
 
     @objc func wordPromoteTapped(_ sender: UIButton) {
@@ -898,7 +1075,9 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 /// 상단바 도구를 켜고 끄고, ≡ 를 끌어서 순서를 바꾼다.
 /// 위 묶음: 순서를 바꿀 수 있는 도구. 아래 묶음: 오른쪽 끝에 붙는 화살표와 닫기.
 final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegate {
-    let table = PanelTableView(frame: .zero, style: .plain)
+    let table = PanelTableView(frame: .zero, style: .insetGrouped)
+    /// 위에 고정되는 미리 보기 (목록과 같이 스크롤되지 않는다)
+    private(set) var header = UIView()
     private let settings: Settings
     private let theme: Theme
     private var order: [String]
@@ -925,27 +1104,45 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
         // 끌어서 옮기는 편집 모드는 목록을 밀어 올리는 손짓과 겹쳐서 쓰지 않는다. ▲▼ 버튼으로 옮긴다.
         table.allowsSelection = false
         table.backgroundColor = .clear
-        table.separatorColor = theme.divider
+        table.separatorColor = theme.divider.withAlphaComponent(0.7)
         table.rowHeight = 48
-        table.tableHeaderView = makeHeader()
+        // 묶음 카드의 좌우 여백을 설정 화면과 같게 (10)
+        table.insetsLayoutMarginsFromSafeArea = false
+        table.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+        table.sectionHeaderHeight = UITableView.automaticDimension
+        table.sectionFooterHeight = UITableView.automaticDimension
+        if #available(iOS 15.0, *) { table.sectionHeaderTopPadding = 0 }
+        table.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 4))
+        header = makeHeader()
     }
 
-    // 미리 보기와 안내 문구
+    /// 묶음 위 작은 회색 소제목 / 아래 설명 (설정 화면과 같은 모양)
+    private func smallLabel(_ text: String, size: CGFloat, top: CGFloat, bottom: CGFloat) -> UIView {
+        let l = UILabel()
+        l.text = text
+        l.numberOfLines = 0
+        l.font = .systemFont(ofSize: size)
+        l.textColor = theme.muted
+        let box = UIView()
+        l.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.topAnchor.constraint(equalTo: box.topAnchor, constant: top),
+            l.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -bottom),
+            l.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10 + KeyboardViewController.groupIndent),
+            l.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10 - KeyboardViewController.groupIndent),
+        ])
+        return box
+    }
+
+    // 미리 보기: 소제목, 카드, 설명. 목록 위에 고정된다.
     private func makeHeader() -> UIView {
-        let box = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 104))
-        let top = UILabel()
-        top.text = "미리 보기 · 켠 것만 이 순서대로 보입니다"
-        top.font = .systemFont(ofSize: 12)
-        top.textColor = theme.muted
-        let bottom = UILabel()
-        bottom.text = "≡ 를 잡고 끌어 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다."
-        bottom.font = .systemFont(ofSize: 12)
-        bottom.textColor = theme.muted
-        bottom.adjustsFontSizeToFitWidth = true
-        bottom.minimumScaleFactor = 0.8
+        let box = UIView()
+        let top = smallLabel("미리 보기", size: 13, top: 10, bottom: 6)
+        let bottom = smallLabel("켠 것만 이 순서대로 보입니다", size: 12, top: 6, bottom: 4)
         let card = UIView()
         card.backgroundColor = theme.row
-        card.layer.cornerRadius = 10
+        card.layer.cornerRadius = 12
         preview.axis = .horizontal
         preview.alignment = .center
         preview.spacing = 2
@@ -956,22 +1153,36 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
             box.addSubview(v)
         }
         NSLayoutConstraint.activate([
-            top.topAnchor.constraint(equalTo: box.topAnchor, constant: 8),
-            top.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
-            card.topAnchor.constraint(equalTo: top.bottomAnchor, constant: 6),
+            top.topAnchor.constraint(equalTo: box.topAnchor),
+            top.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            top.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            card.topAnchor.constraint(equalTo: top.bottomAnchor),
             card.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10),
             card.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10),
-            card.heightAnchor.constraint(equalToConstant: 42),
+            card.heightAnchor.constraint(equalToConstant: 44),
             preview.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 6),
             preview.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -6),
             preview.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            bottom.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 8),
-            bottom.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
-            bottom.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -12),
+            bottom.topAnchor.constraint(equalTo: card.bottomAnchor),
+            bottom.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            bottom.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            bottom.bottomAnchor.constraint(equalTo: box.bottomAnchor),
         ])
         updatePreview()
         return box
     }
+
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        smallLabel(section == 0 ? "왼쪽 (한/영 다음)" : "오른쪽 끝", size: 13, top: section == 0 ? 10 : 18, bottom: 6)
+    }
+
+    func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        section == 0 ? smallLabel("≡ 를 잡고 끌어 순서를 바꿉니다. 화살표와 닫기는 오른쪽 끝에 붙습니다.", size: 12, top: 6, bottom: 0)
+                     : UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 12))
+    }
+
+    func tableView(_ tableView: UITableView, estimatedHeightForHeaderInSection section: Int) -> CGFloat { 34 }
+    func tableView(_ tableView: UITableView, estimatedHeightForFooterInSection section: Int) -> CGFloat { section == 0 ? 36 : 12 }
 
     private func previewIcon(_ name: String) -> UIView {
         let v = UIImageView(image: Icon.image(name, size: 18, line: 1.75))
@@ -1030,7 +1241,7 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let item = key(indexPath)
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        cell.backgroundColor = .clear
+        cell.backgroundColor = theme.row
         cell.selectionStyle = .none
         cell.textLabel?.text = ToolbarEditList.names[item]
         cell.textLabel?.font = .systemFont(ofSize: 15)
@@ -1065,10 +1276,6 @@ final class ToolbarEditList: NSObject, UITableViewDataSource, UITableViewDelegat
             cell.accessoryView = sw
         }
         return cell
-    }
-
-    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 ? "왼쪽 (한/영 다음)" : "오른쪽 끝"
     }
 
     private var dragRow: Int?

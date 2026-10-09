@@ -424,7 +424,9 @@ final class KeyboardViewController: UIInputViewController {
         resolveTheme()
         disarm()
         // 바탕은 투명하게: iOS 가 깐 키보드 판의 색이 그대로 보여 경계 없이 하나로 보인다
-        view.backgroundColor = .clear
+        // 단, 완전히 투명하면 iOS 가 그 자리의 터치를 키보드에 주지 않는다 (설정 여백을 밀어도 스크롤이 안 되고,
+        // 키 사이 틈을 눌러도 가까운 키가 안 눌렸다). 눈에 안 보일 만큼만 색을 깔아 터치를 받는다.
+        view.backgroundColor = UIColor(white: isDark ? 0 : 1, alpha: 0.015)
         divider.backgroundColor = theme.divider
         // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
