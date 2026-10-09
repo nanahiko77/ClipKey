@@ -170,6 +170,16 @@ struct HangulComposer {
         return (idx / 588, (idx % 588) / 28, idx % 28)
     }
 
+    /// 입력한 받침(typed)에서 단어 쪽 받침(kept)을 남기고 다음 글자로 넘어갈 자음. 없으면 nil.
+    static func movedJong(_ typed: Int, keeping kept: Int) -> Character? {
+        guard typed > 0 else { return nil }
+        let t = jongList[typed - 1]
+        if kept == 0 { return choList.contains(t) ? t : nil }
+        let k = jongList[kept - 1]
+        guard let pair = jongPairs.first(where: { $0.value == t })?.key, pair.first == k else { return nil }
+        return pair.last
+    }
+
     /// 입력 중인 글자가 단어의 앞부분과 맞는지. 초성만 쳐도 맞고, 마지막 글자는 받침이 없어도 맞는다.
     static func matches(query: String, word: String) -> Bool {
         let q = Array(query)
@@ -183,7 +193,12 @@ struct HangulComposer {
                 if choList[d.cho] == q[i] { continue }
                 return false
             }
-            if i == q.count - 1, let dq = parts(q[i]), dq.jong == 0, dq.cho == d.cho, dq.jung == d.jung { continue }
+            if i == q.count - 1, let dq = parts(q[i]), dq.cho == d.cho, dq.jung == d.jung {
+                if dq.jong == 0 { continue }
+                // 받침이 다음 글자 초성으로 넘어갈 자리: 갑 → 가방, 닭 → 달걀
+                if i + 1 < w.count, let next = parts(w[i + 1]), let moved = movedJong(dq.jong, keeping: d.jong),
+                   choList[next.cho] == moved { continue }
+            }
             return false
         }
         return true

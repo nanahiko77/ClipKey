@@ -683,11 +683,18 @@ final class KeyboardViewController: UIInputViewController {
             add(fix, .correction)
             add("\u{201C}\(word)\u{201D}", .original)
         }
+        // 한글은 맞춤법 사전(ko_dict.txt, 활용형 포함)에서 먼저 찾고, 모자라면 iOS 사전으로 채운다
+        var dictCount = 0
+        if lang == .hangul {
+            let found = KoDictionary.shared.complete(word, limit: 3)
+            for c in found { add(c, .dict) }
+            dictCount = found.count
+        }
         let language: String? = lang == .english ? "en_US" : koLanguage
-        if let language = language, word.allSatisfy({ $0.isLetter }) {
+        if dictCount < 3, let language = language, word.allSatisfy({ $0.isLetter }) {
             let range = NSRange(location: 0, length: (word as NSString).length)
             let found = checker.completions(forPartialWordRange: range, in: word, language: language) ?? []
-            for c in found.prefix(3) { add(c, .dict) }
+            for c in found.prefix(3 - dictCount) { add(c, .dict) }
         }
         for w in matched where !words.isManual(w) { add(w, .learned) }
         let lower = word.lowercased()

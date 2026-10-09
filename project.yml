@@ -6,8 +6,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.3"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "1.4"
+    CURRENT_PROJECT_VERSION: "5"
     TARGETED_DEVICE_FAMILY: "1,2"
 targets:
   ClipKey:
@@ -32,7 +32,11 @@ targets:
   ClipKeyboard:
     type: app-extension
     platform: iOS
-    sources: [Keyboard]
+    sources:
+      - path: Keyboard
+        excludes: ["ko_dict.txt"]
+      - path: Keyboard/ko_dict.txt
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ban.clipkey.keyboard

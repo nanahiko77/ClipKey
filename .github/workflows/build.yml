@@ -29,6 +29,9 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
+      - name: Check keyboard dictionary
+        run: test -s build/Build/Products/Release-iphoneos/ClipKey.app/PlugIns/ClipKeyboard.appex/ko_dict.txt
+
       - name: Package IPA
         run: |
           mkdir Payload
