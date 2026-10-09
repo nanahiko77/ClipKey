@@ -288,6 +288,7 @@ extension KeyboardViewController {
         guard let e = b.title(for: .normal) else { return }
         haptic()
         textDocumentProxy.insertText(e)     // 검색 칸이 아니라 입력창에 넣는다
+        ctxCache = nil
         settings.useEmoji(e)
     }
 
@@ -437,6 +438,7 @@ extension KeyboardViewController {
         k.onCursorMove = { [weak self] steps in
             guard let self = self, !self.adding else { return }
             self.textDocumentProxy.adjustTextPosition(byCharacterOffset: steps)
+            self.ctxCache = nil
             if self.settings.haptic {
                 self.selectionFeedback.selectionChanged()
                 self.selectionFeedback.prepare()
@@ -593,21 +595,26 @@ extension KeyboardViewController {
             k.layer.cornerRadius = 8
             return k
         }
-        let row1 = hstack([jamo("ㄱ", "ㄱ", "1"), jamo("ㄴ", "ㄴ", "2"), jamo("ㅏ ㅓ", "v:ㅏㅓ", "3"),
-                           rounded(backspaceKey())], spacing: 6)
-        let row2 = hstack([jamo("ㄹ", "ㄹ", "4"), jamo("ㅁ", "ㅁ", "5"), jamo("ㅗ ㅜ", "v:ㅗㅜ", "6"),
-                           rounded(spaceKey())], spacing: 6)
-        // 문장부호 키를 반으로 나눠 옆에 123 을 둔다.
-        // 123 은 ㅣ 바로 옆이라 잘못 눌리기 쉬워서: ㅣ 와의 틈을 넓히고, 123 의 왼쪽 가장자리 9pt 는 ㅣ 로 본다.
+        // 오타 줄이기 B: 글자 칸과 오른쪽 기능 칸 사이를 넓히고(6→12), 줄 사이도 넓힌다(6→9)
+        func row(_ letters: [UIView], _ fn: UIView) -> UIStackView {
+            let r = hstack(letters + [fn], spacing: 6)
+            if let last = letters.last { r.setCustomSpacing(12, after: last) }
+            return r
+        }
+        let row1 = row([jamo("ㄱ", "ㄱ", "1"), jamo("ㄴ", "ㄴ", "2"), jamo("ㅏ ㅓ", "v:ㅏㅓ", "3")], rounded(backspaceKey()))
+        let row2 = row([jamo("ㄹ", "ㄹ", "4"), jamo("ㅁ", "ㅁ", "5"), jamo("ㅗ ㅜ", "v:ㅗㅜ", "6")], rounded(spaceKey()))
+        // 123 은 ㅣ 옆이라 잘못 눌리기 쉬워서 왼쪽 가장자리 9pt 는 ㅣ 로 본다
         let num = rounded(numKey("123"))
         num.guardInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 0)
         let punctAndNum = hstack([num, rounded(makeKey(".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
-        let iKey = jamo("ㅣ", "ㅣ", "9")
-        let row3 = hstack([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), iKey, punctAndNum], spacing: 6)
-        row3.setCustomSpacing(10, after: iKey)
-        let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
-                           rounded(makeKey("쌍자음", id: "double", font: 16)), rounded(returnKey())], spacing: 6)
-        fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
+        let row3 = row([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9")], punctAndNum)
+        // 맨 아래 줄은 손가락이 위로 닿기 쉬워서, 키 위쪽 5pt 까지 이 줄의 키로 받는다
+        let bottom = [rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
+                      rounded(makeKey("쌍자음", id: "double", font: 16))]
+        let ret = rounded(returnKey())
+        for k in bottom + [ret] { k.reachUp = 5 }
+        let row4 = row(bottom, ret)
+        fillRows([row1, row2, row3, row4], spacing: 9, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
     }
 
     /// 숫자·전화번호 칸: 바로 숫자판

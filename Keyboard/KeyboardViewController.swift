@@ -85,6 +85,9 @@ final class KeyboardViewController: UIInputViewController {
     /// 조합 중 글자(marked text)를 마지막으로 바꾼 때. 그 직후의 커서 변화는 우리가 한 것으로 본다.
     var markEditTime = Date.distantPast
     var proxyOps: [(UITextDocumentProxy) -> Void] = []
+    /// 깜빡임 시험: 앞 글자를 매번 읽지 않고 따라가는 사본. nil 이면 다음에 한 번 읽는다.
+    var ctxCache: String?
+    var ownEditTime = Date.distantPast
     var proxyPaused = false
     // 한글 오타 교정은 뒤에서 계산한다
     let correctorQueue = DispatchQueue(label: "clipkey.corrector", qos: .userInitiated)
@@ -320,6 +323,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         capture()
+        ctxCache = nil
         // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
         resolveTheme()
         _ = checkField()
@@ -353,6 +357,7 @@ final class KeyboardViewController: UIInputViewController {
     /// marked text 를 쓸 때: 우리가 바꾼 직후가 아닌데 커서가 움직였으면 사용자가 다른 곳을 누른 것이다
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
+        if Date().timeIntervalSince(ownEditTime) > 0.3 { ctxCache = nil }   // 사용자가 커서를 옮겼다
         if marked, !composing.isEmpty, Date().timeIntervalSince(markEditTime) > 0.3 {
             // 다른 곳을 누르면 앱이 조합 중 글자를 스스로 확정한다. 문서는 건드리지 않고 조합 상태만 버린다.
             composer = HangulComposer()
@@ -364,6 +369,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        if Date().timeIntervalSince(ownEditTime) > 0.3 { ctxCache = nil }   // 앱이 글자를 바꿨다
         let was = isDark
         resolveTheme()
         let fieldChanged = checkField()
@@ -475,6 +481,11 @@ final class KeyboardViewController: UIInputViewController {
 
     var docBefore: String? {
         if let b = addBuffer { return b }
+        if settings.fewContextReads {
+            // 처음 한 번만 읽고, 그다음부터는 우리가 넣고 지운 것으로 따라간다
+            if ctxCache == nil { ctxCache = textDocumentProxy.documentContextBeforeInput ?? "" }
+            return ctxCache
+        }
         let ctx = textDocumentProxy.documentContextBeforeInput
         // 조합 중 글자를 앞 글자에 넣어 주지 않는 앱도 있어서, 빠져 있으면 붙여서 본다
         if marked, !composing.isEmpty, !(ctx ?? "").hasSuffix(composing) {
@@ -537,6 +548,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func docInsert(_ s: String) {
+        if addBuffer == nil, ctxCache != nil {
+            ctxCache! += s
+            if ctxCache!.count > 400 { ctxCache = String(ctxCache!.suffix(300)) }
+        }
+        ownEditTime = Date()
         if addBuffer != nil {
             addBuffer?.append(s)
             updateAddField()
@@ -546,6 +562,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func docDelete() {
+        if addBuffer == nil, ctxCache != nil, !ctxCache!.isEmpty { ctxCache!.removeLast() }
+        ownEditTime = Date()
         if let b = addBuffer {
             if !b.isEmpty { addBuffer?.removeLast() }
             updateAddField()
@@ -1193,6 +1211,7 @@ final class KeyboardViewController: UIInputViewController {
         deletedAllText = ""
         if let after = textDocumentProxy.documentContextAfterInput, !after.isEmpty {
             textDocumentProxy.adjustTextPosition(byCharacterOffset: after.count)
+            ctxCache = nil
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             self?.deleteAllPass(0)
@@ -1201,6 +1220,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 키보드는 커서 앞 글자를 한 번에 일부만 볼 수 있어서, 남은 것이 없을 때까지 나눠 지운다
     func deleteAllPass(_ pass: Int) {
+        ctxCache = nil          // 남은 글자는 실제로 읽어서 확인한다
         guard pass < 40, let before = docBefore, !before.isEmpty else {
             lastKeyID = "⌫"
             let text = deletedAllText
@@ -1289,11 +1309,13 @@ final class KeyboardViewController: UIInputViewController {
     @objc func cursorLeft() {
         resetComposer()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
+        ctxCache = nil
     }
 
     @objc func cursorRight() {
         resetComposer()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: 1)
+        ctxCache = nil
     }
 
     // MARK: - 추천 단어

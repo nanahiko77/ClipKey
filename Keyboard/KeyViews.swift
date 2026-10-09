@@ -11,6 +11,12 @@ final class KeyArea: UIView {
     func invalidateKeys() { keys = nil }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if keys == nil { keys = KeyArea.collect(self) }
+        // 맨 아래 줄 키 바로 위를 누르면 아래 키로 (손가락이 노린 곳보다 위에 닿는 것을 보정)
+        for k in keys ?? [] where k.reachUp > 0 && !k.isHidden && k.superview != nil {
+            let f = k.convert(k.bounds, to: self)
+            if point.x >= f.minX, point.x <= f.maxX, point.y < f.minY, point.y >= f.minY - k.reachUp { return k }
+        }
         let hit = super.hitTest(point, with: event)
         // 잘못 누르면 곤란한 키(123 등)는 가장자리를 덜 받는다: 그 자리는 옆의 글자 키로 본다
         if let k = hit as? KeyButton, k.guardInsets != .zero {
@@ -87,6 +93,8 @@ final class KeyButton: UIButton {
     var id = ""
     /// 이 키의 가장자리 중 덜 받을 폭. 그 자리를 누르면 옆 키로 본다 (잘못 누르면 화면이 바뀌는 키에 쓴다).
     var guardInsets: UIEdgeInsets = .zero
+    /// 키 위쪽으로 이만큼 벗어나 눌러도 이 키로 본다 (맨 아래 줄)
+    var reachUp: CGFloat = 0
     var hintText: String? { didSet { hintLabel.text = hintText } }
     var hintColor: UIColor = .gray { didSet { hintLabel.textColor = hintColor } }
     var bubbleBackground: UIColor = .white

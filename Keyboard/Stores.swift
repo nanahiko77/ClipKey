@@ -10,7 +10,7 @@ final class Settings {
     private let d = UserDefaults.standard
 
     private init() {
-        d.register(defaults: ["markedComposing2": false, "naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
+        d.register(defaults: ["fewContextReads": true, "markedComposing2": false, "naraHints": true, "maxClips": 50, "autoCorrect": true, "showArrows": true,
                               "showHide": true, "repeatOnHold": true, "repeatSpeed": 5, "longPressTime": 0.35])
         // 이모지 패널이 생겼다: 예전에 "준비 중"이라 꺼져 있던 이모지를 한 번만 켠다
         if !d.bool(forKey: "emojiReady") {
@@ -31,6 +31,12 @@ final class Settings {
     var markedComposing: Bool {
         get { d.bool(forKey: "markedComposing2") }
         set { d.set(newValue, forKey: "markedComposing2") }
+    }
+
+    /// 깜빡임 시험: 키를 칠 때마다 입력창 앞 글자를 읽지 않고, 넣고 지운 것을 키보드가 직접 따라간다
+    var fewContextReads: Bool {
+        get { d.bool(forKey: "fewContextReads") }
+        set { d.set(newValue, forKey: "fewContextReads") }
     }
 
     // MARK: 내가 고른 교정
