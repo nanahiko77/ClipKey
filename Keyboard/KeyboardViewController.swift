@@ -1060,7 +1060,21 @@ final class KeyboardViewController: UIInputViewController {
         let guesses = (checker.guesses(forWordRange: range, in: word, language: language) ?? [])
             .filter { !$0.contains(" ") }
             .prefix(5)
-        let found = KoCorrector.personal(word, words: Array(guesses), hangulLayout: settings.hangulLayout)
+        // 아이폰 검사기의 첫 후보는 자주 쓰는 말일 가능성이 높다. 우리 사전은 쓰는 빈도를 거의 보지 않아서
+        // 자판 거리만 가까운 드문 말(무억을 → 무역을)을 고르기 쉬워, 첫 후보는 앞에 두고 자동 교정도 허락한다.
+        // (기본 키보드가 무억을·뮤억을 → 무엇을 로 고치는 것과 같게)
+        let long = KoCorrector.jamo(word).count > 6
+        var found: [KoCorrector.Candidate] = []
+        for (i, g) in guesses.enumerated() {
+            guard let c = KoCorrector.personal(word, words: [g], hangulLayout: settings.hangulLayout).first else { continue }
+            if i == 0 {
+                let d = c.score + 0.3
+                found.append(KoCorrector.Candidate(text: c.text, score: d - 0.6, sure: d <= (long ? 1.5 : 0.5)))
+            } else {
+                found.append(c)
+            }
+        }
+        found.sort { $0.score < $1.score }
         if iosGuessCache.count > 200 { iosGuessCache.removeAll() }
         iosGuessCache[word] = found
         return found

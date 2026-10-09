@@ -180,7 +180,11 @@ final class KoCorrector {
         var scores: [String: (Double, Bool)] = [:]
         func offer(_ c: String, _ score: Double, sure: Bool) {
             guard c != word else { return }
-            if let old = scores[c], old.0 <= score { return }
+            // 같은 말이 여러 길(조사를 떼고 / 통째로)로 나오면 더 낮은 점수를 쓰되, 한 번이라도 확실했으면 확실한 것으로
+            if let old = scores[c] {
+                scores[c] = (min(old.0, score), old.1 || sure)
+                return
+            }
             scores[c] = (score, sure)
         }
         func ranked() -> [Candidate] {

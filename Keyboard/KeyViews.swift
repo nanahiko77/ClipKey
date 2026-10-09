@@ -152,8 +152,12 @@ final class KeyButton: UIButton {
     private var cursorX: CGFloat?
     private var cursorY: CGFloat = 0
     private var startY: CGFloat = 0
-    /// 처음 민 방향으로 고정한다 (위아래로 밀 때 좌우로 조금 흔들려도 글자 단위로 움직이지 않게)
-    private var cursorVertical = false
+    /// 처음 민 방향으로 고정한다 (위아래로 밀 때 좌우로 조금 흔들려도 글자 단위로 움직이지 않게). 0 아직, 1 좌우, 2 위아래
+    private var cursorDir = 0
+    /// 기본 키보드처럼 꾹 누르고 있으면 움직이지 않아도 커서 모드로 바뀐다
+    static let cursorHoldTime: TimeInterval = 0.4
+    private var cursorHoldTimer: Timer?
+    private var lastPoint: CGPoint = .zero
 
     private let hintLabel = UILabel()
     private var startX: CGFloat = 0
@@ -192,6 +196,13 @@ final class KeyButton: UIButton {
 
     override var isHighlighted: Bool {
         didSet { alpha = isHighlighted ? 0.6 : 1 }
+    }
+
+    /// 커서 모드: 기본 키보드처럼 키 글자를 지워 빈 판으로 보인다
+    func setBlank(_ on: Bool) {
+        titleLabel?.alpha = on ? 0 : 1
+        imageView?.alpha = on ? 0 : 1
+        hintLabel.alpha = on ? 0 : 1
     }
 
     @objc private func didTouchDown() {
@@ -289,9 +300,29 @@ final class KeyButton: UIButton {
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         startX = touch.location(in: self).x
         startY = touch.location(in: self).y
+        lastPoint = touch.location(in: self)
         swipeCount = nil
         cursorX = nil
+        if cursorStep > 0 {
+            cursorHoldTimer?.invalidate()
+            let t = Timer(timeInterval: KeyButton.cursorHoldTime, repeats: false) { [weak self] _ in
+                self?.startCursorMode()
+            }
+            RunLoop.main.add(t, forMode: .common)
+            cursorHoldTimer = t
+        }
         return super.beginTracking(touch, with: event)
+    }
+
+    /// 커서 모드 시작 (꾹 눌렀거나, 누른 채 밀기 시작했을 때)
+    private func startCursorMode() {
+        cursorHoldTimer?.invalidate()
+        cursorHoldTimer = nil
+        guard cursorX == nil, isTracking else { return }
+        cursorX = lastPoint.x
+        cursorY = lastPoint.y
+        cursorDir = 0
+        onCursorStart?()
     }
 
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -327,30 +358,40 @@ final class KeyButton: UIButton {
 
     private func trackCursor(_ touch: UITouch) {
         let p = touch.location(in: self)
-        let x = p.x
+        lastPoint = p
         if cursorX == nil {
-            guard abs(x - startX) > KeyButton.cursorStart || abs(p.y - startY) > KeyButton.cursorStart else { return }
-            cursorX = x
-            cursorY = p.y
-            cursorVertical = abs(p.y - startY) > abs(x - startX) && onCursorLine != nil
-            onCursorStart?()
+            guard abs(p.x - startX) > KeyButton.cursorStart || abs(p.y - startY) > KeyButton.cursorStart else { return }
+            startCursorMode()
+            // 밀어서 시작했으면 민 방향으로 바로 정한다
+            cursorDir = abs(p.y - startY) > abs(p.x - startX) && onCursorLine != nil ? 2 : 1
             return
         }
         guard let last = cursorX else { return }
-        let steps = cursorVertical ? 0 : Int((x - last) / cursorStep)
-        if steps != 0 {
-            cursorX = last + CGFloat(steps) * cursorStep
-            onCursorMove?(steps)
+        if cursorDir == 0 {
+            // 꾹 눌러 시작했으면 처음 움직인 방향으로 정한다
+            let dx = p.x - last, dy = p.y - cursorY
+            guard max(abs(dx), abs(dy)) > 8 else { return }
+            cursorDir = abs(dy) > abs(dx) && onCursorLine != nil ? 2 : 1
         }
-        let lines = cursorVertical ? Int((p.y - cursorY) / KeyButton.cursorLineStep) : 0
-        if lines != 0 {
-            cursorY += CGFloat(lines) * KeyButton.cursorLineStep
-            onCursorLine?(lines)
+        if cursorDir == 1 {
+            let steps = Int((p.x - last) / cursorStep)
+            if steps != 0 {
+                cursorX = last + CGFloat(steps) * cursorStep
+                onCursorMove?(steps)
+            }
+        } else {
+            let lines = Int((p.y - cursorY) / KeyButton.cursorLineStep)
+            if lines != 0 {
+                cursorY += CGFloat(lines) * KeyButton.cursorLineStep
+                onCursorLine?(lines)
+            }
         }
     }
 
     /// 커서를 옮기던 중이었으면 끝내고 true
     private func endCursor() -> Bool {
+        cursorHoldTimer?.invalidate()
+        cursorHoldTimer = nil
         guard cursorX != nil else { return false }
         cursorX = nil
         onCursorEnd?()

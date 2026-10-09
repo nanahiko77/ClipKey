@@ -431,8 +431,12 @@ extension KeyboardViewController {
             self.resetComposer()
             self.cursorDragging = true
             self.selectionFeedback.prepare()
-            // 다른 키는 흐리게 해서 지금은 커서를 옮기는 중이라는 것을 보여 준다
-            for other in self.keyArea.allKeys where other !== k { other.alpha = 0.35 }
+            // 기본 키보드처럼: 톡 하는 진동과 함께 키 글자가 사라져 빈 판(트랙패드)이 된다
+            if self.settings.haptic { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            UIView.animate(withDuration: 0.15) {
+                for key in self.keyArea.allKeys { key.setBlank(true) }
+                k?.setBlank(true)
+            }
             self.refreshSuggestions()
         }
         k.onCursorMove = { [weak self] steps in
@@ -455,7 +459,9 @@ extension KeyboardViewController {
         k.onCursorEnd = { [weak self] in
             guard let self = self else { return }
             self.cursorDragging = false
-            for other in self.keyArea.allKeys { other.alpha = 1 }
+            UIView.animate(withDuration: 0.15) {
+                for key in self.keyArea.allKeys { key.setBlank(false); key.alpha = 1 }
+            }
             self.lastSuggestSignature = nil
             self.refreshSuggestions()
         }
