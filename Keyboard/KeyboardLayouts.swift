@@ -216,6 +216,10 @@ extension KeyboardViewController {
         k.altHoverBackground = theme.danger
         k.altHoverText = theme.onDanger
         k.onAlt = { [weak self] in self?.deleteAll() }
+        k.onAltHover = {
+            // 설정과 상관없이, 전체 삭제가 걸렸다는 것은 진동으로 알린다
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
         return k
     }
 

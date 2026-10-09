@@ -17,6 +17,7 @@ final class KeyButton: UIButton {
     /// 꾹 누르고 있으면 키 위에 뜨는 큰 말풍선. 손가락을 그 위로 밀어서 떼면 onAlt 가 실행된다.
     var altTitle: String?
     var onAlt: (() -> Void)?
+    var onAltHover: (() -> Void)?
     var altBackground: UIColor = .black
     var altText: UIColor = .white
     var altHoverBackground: UIColor = .red
@@ -103,9 +104,14 @@ final class KeyButton: UIButton {
         if let b = altBubble, let host = bubbleHost {
             let inside = b.frame.insetBy(dx: -12, dy: -12).contains(touch.location(in: host))
             if inside != altHover {
+                // 말풍선 위에 올라오면 빨갛게 커지고 한 번 떨린다: 지금 떼면 실행된다는 표시
                 altHover = inside
                 b.backgroundColor = inside ? altHoverBackground : altBackground
                 b.textColor = inside ? altHoverText : altText
+                UIView.animate(withDuration: 0.12) {
+                    b.transform = inside ? CGAffineTransform(scaleX: 1.12, y: 1.12) : .identity
+                }
+                if inside { onAltHover?() }
             }
         }
         return result
