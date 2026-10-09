@@ -172,7 +172,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
 
         // 추천 줄(38) + 도구 줄(46) + 자판. 자판 키 높이는 아이폰 기본 키보드와 비슷하게 (아래는 아이폰의 지구본 줄이 붙는다)
-        let height = view.heightAnchor.constraint(equalToConstant: 300)
+        let height = view.heightAnchor.constraint(equalToConstant: 336)
         height.priority = UILayoutPriority(999)
         height.isActive = true
 
