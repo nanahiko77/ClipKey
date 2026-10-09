@@ -152,7 +152,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     /// 알림 줄 바탕: 라이트는 거의 검정, 다크는 바탕보다 밝은 회색 (글씨는 늘 흰색)
     var barColor: UIColor { Theme.hex(isDark ? 0x3A3D43 : 0x16181C) }
     /// 이모지 패널에서는 아래 [가] [간격] [지우기] 줄을 가리지 않게 그 위에 띄운다
-    var barLift: CGFloat { panel == .emoji ? -54 : -6 }
+    var barLift: CGFloat { panel == .emoji ? -48 : -6 }
 
     /// 목록 아래에 잠깐 뜨는 안내
     func showToast(_ text: String) {

@@ -579,7 +579,7 @@ extension KeyboardViewController {
             ], equal: false)
         }
 
-        fillRows([row1, row2, row3, row4], spacing: 8, insets: UIEdgeInsets(top: 6, left: 4, bottom: 8, right: 4))
+        fillRows([row1, row2, row3, row4], spacing: 8, insets: UIEdgeInsets(top: 6, left: 4, bottom: 2, right: 4))
     }
 
     func buildNara() {
@@ -604,7 +604,7 @@ extension KeyboardViewController {
                            punctAndNum], spacing: 6)
         let row4 = hstack([rounded(makeKey("획추가", id: "stroke", font: 16)), jamo("ㅡ", "ㅡ", "0"),
                            rounded(makeKey("쌍자음", id: "double", font: 16)), rounded(returnKey())], spacing: 6)
-        fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
+        fillRows([row1, row2, row3, row4], spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
     }
 
     /// 숫자·전화번호 칸: 바로 숫자판
@@ -635,7 +635,7 @@ extension KeyboardViewController {
             hstack([digit("7", "PQRS"), digit("8", "TUV"), digit("9", "WXYZ"), fn(makeKey(".", fn: true, font: 22))], spacing: 6),
             hstack([back, digit("0", "", hint: "+"), fn(makeKey(",", fn: true, font: 22)), fn(returnKey())], spacing: 6),
         ]
-        fillRows(rows, spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 8, right: 6))
+        fillRows(rows, spacing: 6, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
     }
 
     func buildSymbols() {
@@ -658,6 +658,6 @@ extension KeyboardViewController {
         let back = numKey(lang == .hangul ? "가" : "ABC")
         back.accessibilityLabel = "글자 자판으로 돌아가기"
         let row5 = hstack([fixed(back, 52), spaceKey(), fixed(backspaceKey(), 59), fixed(returnKey(), 45)], equal: false)
-        fillRows([row1, row2, row3, row4, row5], spacing: 6, insets: UIEdgeInsets(top: 6, left: 4, bottom: 8, right: 4))
+        fillRows([row1, row2, row3, row4, row5], spacing: 6, insets: UIEdgeInsets(top: 6, left: 4, bottom: 2, right: 4))
     }
 }

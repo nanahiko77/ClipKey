@@ -313,7 +313,7 @@ extension KeyboardViewController {
             gridView.bottomAnchor.constraint(equalTo: bottom.topAnchor, constant: -6),
             bottom.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor, constant: 6),
             bottom.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor, constant: -6),
-            bottom.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: -8),
+            bottom.bottomAnchor.constraint(equalTo: keyArea.bottomAnchor, constant: -2),
             bottom.heightAnchor.constraint(equalToConstant: 40),
         ])
     }
