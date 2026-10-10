@@ -288,18 +288,28 @@ final class ToolbarEditor: UIView {
     private func reload() {
         barStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         barViews = []
+        // 맨 앞 고정: 실제 상단바와 같은 [한] 흰 버튼과 [▦] 접기 버튼
         let lang = UILabel()
-        lang.text = "한 ▦"
-        lang.font = .boldSystemFont(ofSize: 12)
+        lang.text = "한"
+        lang.font = .boldSystemFont(ofSize: 14)
         lang.textAlignment = .center
         lang.textColor = theme.text
-        lang.backgroundColor = theme.funcKey
+        lang.backgroundColor = theme.letterKey
         lang.layer.cornerRadius = 7
         lang.layer.masksToBounds = true
-        lang.widthAnchor.constraint(equalToConstant: 38).isActive = true
-        lang.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        lang.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        lang.heightAnchor.constraint(equalToConstant: 28).isActive = true
         barStack.addArrangedSubview(lang)
-        // 한/영 다음 8칸: 상단바처럼 끝까지 채운다. 2칸 도구는 두 칸 폭.
+        let grid = UIImageView(image: Icon.image("grid", size: 16, line: 2))
+        grid.tintColor = theme.text
+        grid.contentMode = .center
+        grid.backgroundColor = theme.funcKey
+        grid.layer.cornerRadius = 7
+        grid.clipsToBounds = true
+        grid.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        grid.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        barStack.addArrangedSubview(grid)
+        // [한][▦] 다음 7칸: 상단바처럼 끝까지 채운다. 2칸 도구는 두 칸 폭.
         let slots = UIStackView()
         slots.axis = .horizontal
         slots.alignment = .center
