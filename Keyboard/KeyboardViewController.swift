@@ -123,6 +123,9 @@ final class KeyboardViewController: UIInputViewController {
     let toolbar = UIStackView()
     /// 추천 줄 (B안: 도구 줄 위에 따로 둔다). 글자 자판·숫자 화면에서만 보인다.
     let suggestBar = UIView()
+    /// 상단바를 접었을 때 추천 줄 맨 앞의 [한/EN] [▦]
+    let leadStack = UIStackView()
+    var leadGap: NSLayoutConstraint?
     /// 입력 영역 줄: 키보드 맨 위의 큰 입력 칸과 [보내기]. 입력 영역을 쓸 때만 보인다.
     let stageBar = UIView()
     let stageLabel = UILabel()
@@ -246,6 +249,7 @@ final class KeyboardViewController: UIInputViewController {
             v.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(v)
         }
+        setupLeadStack()
         // 추천 글자를 위로 올려 그리지 않는다: 키보드가 닫힌 상태에서 처음 뜰 때 iOS 가 위쪽 띠 없이
         // 판의 둥근 윗변을 우리 화면 바로 위에 붙여서, 올려 그린 글자가 잘려 보였다
         suggestBar.clipsToBounds = true
@@ -258,7 +262,7 @@ final class KeyboardViewController: UIInputViewController {
             suggestBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             suggestBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             barHeight,
-            suggestScroll.leadingAnchor.constraint(equalTo: suggestBar.leadingAnchor, constant: 6),
+            suggestScroll.leadingAnchor.constraint(equalTo: leadStack.trailingAnchor),
             suggestScroll.trailingAnchor.constraint(equalTo: suggestBar.trailingAnchor, constant: -6),
             suggestScroll.bottomAnchor.constraint(equalTo: suggestBar.bottomAnchor),
             toolbar.topAnchor.constraint(equalTo: suggestBar.bottomAnchor),
@@ -311,6 +315,42 @@ final class KeyboardViewController: UIInputViewController {
         // 상단바를 낮추면 아래 여백부터 줄인다 (46 → 8, 40 이하 → 2)
         toolbar.layoutMargins.bottom = isLandscape ? 2 : max(2, min(8, t - 38))
         toolbarHeight?.constant = showBar ? max(28, t - extra) : t + 8
+        // 상단바를 접었으면 도구 줄을 숨기고 그만큼 키보드를 낮춘다
+        if toolbarFolded {
+            toolbarHeight?.constant = 0
+            viewHeight?.constant -= t
+        }
+        toolbar.isHidden = toolbarFolded
+        updateLeadStack()
+    }
+
+    func setupLeadStack() {
+        leadStack.axis = .horizontal
+        leadStack.alignment = .center
+        leadStack.spacing = 4
+        leadStack.translatesAutoresizingMaskIntoConstraints = false
+        suggestBar.addSubview(leadStack)
+        NSLayoutConstraint.activate([
+            leadStack.leadingAnchor.constraint(equalTo: suggestBar.leadingAnchor, constant: 6),
+            leadStack.bottomAnchor.constraint(equalTo: suggestBar.bottomAnchor, constant: -1),
+            leadStack.heightAnchor.constraint(equalToConstant: 30),
+        ])
+    }
+
+    /// 상단바를 접은 상태인지 (글자·숫자 자판에서만, 단어 추가 중이 아닐 때)
+    var toolbarFolded: Bool {
+        settings.toolbarCollapsed && !adding && (panel == .keys || panel == .symbols || panel == .numpad)
+    }
+
+    /// 접혔으면 추천 줄 맨 앞에 [한][▦]을 넣는다
+    func updateLeadStack() {
+        leadStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        if toolbarFolded {
+            for v in leadButtons(expanded: false) { leadStack.addArrangedSubview(v) }
+            let line = separatorLine(height: 20)
+            leadStack.addArrangedSubview(line)
+        }
+        leadStack.isHidden = !toolbarFolded
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
@@ -709,7 +749,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(cursorPad)|\(stagingWanted)|\(isLandscape)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(cursorPad)|\(settings.toolbarCollapsed)|\(stagingWanted)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.

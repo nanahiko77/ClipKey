@@ -46,6 +46,40 @@ extension KeyboardViewController {
         return Icon.image(name, size: 18, line: 1.75)
     }
 
+    /// [한/EN] 토글과 [▦] 상단바 접기/펴기 버튼. 펼치면 도구 줄 맨 앞, 접으면 추천 줄 맨 앞에 둔다.
+    func leadButtons(expanded: Bool) -> [UIView] {
+        let langB = UIButton(type: .system)
+        langB.setTitle(lang == .hangul ? "한" : "EN", for: .normal)
+        langB.titleLabel?.font = .boldSystemFont(ofSize: 15)
+        langB.setTitleColor(theme.text, for: .normal)
+        langB.backgroundColor = theme.letterKey
+        langB.layer.cornerRadius = 8
+        langB.layer.shadowColor = UIColor.black.cgColor
+        langB.layer.shadowOpacity = isDark ? 0 : 0.12
+        langB.layer.shadowOffset = CGSize(width: 0, height: 1)
+        langB.layer.shadowRadius = 0
+        langB.accessibilityLabel = lang == .hangul ? "한글, 누르면 영문" : "영문, 누르면 한글"
+        langB.addTarget(self, action: #selector(langTapped), for: .touchUpInside)
+        langB.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        langB.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        let grid = UIButton(type: .system)
+        grid.setImage(Icon.image("grid", size: 18, line: 2), for: .normal)
+        grid.tintColor = expanded ? theme.text : theme.muted
+        grid.backgroundColor = expanded ? theme.funcKey : .clear
+        grid.layer.cornerRadius = 8
+        grid.accessibilityLabel = expanded ? "상단바 접기" : "상단바 펴기"
+        grid.addTarget(self, action: #selector(toolbarCollapseTapped), for: .touchUpInside)
+        grid.widthAnchor.constraint(equalToConstant: 34).isActive = true
+        grid.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return [langB, grid]
+    }
+
+    @objc func toolbarCollapseTapped() {
+        haptic()
+        settings.toolbarCollapsed.toggle()
+        rebuild()
+    }
+
     /// 상단바 한 칸 폭: 한/영 키와 여백을 빼고 8칸이 들어가게 (작은 아이폰에서는 조금 좁게)
     func toolbarSlotWidth() -> CGFloat {
         let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
@@ -91,9 +125,8 @@ extension KeyboardViewController {
                 buildBufferToolbar()
                 break
             }
-            let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
-            langB.setAttributedTitle(langTitle(), for: .normal)
-            toolbar.addArrangedSubview(langB)
+            // 맨 앞: [한/EN] (지금 언어) [▦] (상단바 접기)
+            for v in leadButtons(expanded: true) { toolbar.addArrangedSubview(v) }
             // 상단바 꾸미기의 배치대로: 한/영 다음 8칸을 같은 폭으로 끝까지 채운다. "gap" 은 비워 둔 칸.
             clipToolButton = nil
             arrowLeftButton = nil

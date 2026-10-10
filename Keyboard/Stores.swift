@@ -119,6 +119,12 @@ final class Settings {
         get { min(max(d.object(forKey: "stagedMode2") as? Int ?? 2, 0), 3) }
         set { d.set(min(max(newValue, 0), 3), forKey: "stagedMode2") }
     }
+    /// 상단바(도구 줄)를 접어 두었는지. 접으면 [한][▦] + 추천 줄 한 줄만 보인다.
+    var toolbarCollapsed: Bool {
+        get { d.bool(forKey: "toolbarCollapsed") }
+        set { d.set(newValue, forKey: "toolbarCollapsed") }
+    }
+
     /// 상단바의 [입력 칸] 버튼으로 켠 상태 (끌 때까지 유지)
     var stagingToggle: Bool {
         get { d.bool(forKey: "stagingToggle") }
@@ -190,7 +196,8 @@ final class Settings {
 
     /// 상단바에 넣을 수 있는 모든 도구. 화살표와 되돌리기는 2칸.
     static let toolbarAllItems = ["clipboard", "emoji", "settings", "addword", "hide", "stage", "arrows", "undo"]
-    static let toolbarCapacity = 8
+    /// 상단바 도구 칸 수. 맨 앞의 [한/EN] [▦] 두 버튼은 따로 고정이라 7칸.
+    static let toolbarCapacity = 7
     static func toolbarSlots(_ item: String) -> Int { item == "arrows" || item == "undo" ? 2 : 1 }
     /// 비어 있는 한 칸
     static let toolbarGap = "gap"

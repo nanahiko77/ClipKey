@@ -289,7 +289,7 @@ final class ToolbarEditor: UIView {
         barStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         barViews = []
         let lang = UILabel()
-        lang.text = "한/영"
+        lang.text = "한 ▦"
         lang.font = .boldSystemFont(ofSize: 12)
         lang.textAlignment = .center
         lang.textColor = theme.text
@@ -323,8 +323,9 @@ final class ToolbarEditor: UIView {
             }
             slots.addArrangedSubview(v)
             let n = CGFloat(Settings.toolbarSlots(item))
-            // 한 칸 = (전체 - 사이 7개) / 8. n칸 = 그 n배 + 사이 (n-1)개
-            v.widthAnchor.constraint(equalTo: slots.widthAnchor, multiplier: n / 8, constant: n * 0.5 - 4).isActive = true
+            // 한 칸 = (전체 - 사이) / 칸 수. n칸 = 그 n배 + 사이 (n-1)개
+            let cap = CGFloat(Settings.toolbarCapacity)
+            v.widthAnchor.constraint(equalTo: slots.widthAnchor, multiplier: n / cap, constant: n * 4 / cap - 4).isActive = true
             barViews.append((item, v))
         }
 
