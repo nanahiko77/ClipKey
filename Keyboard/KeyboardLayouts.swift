@@ -337,6 +337,8 @@ extension KeyboardViewController {
         shiftKey = nil
         undoTimer?.invalidate()
         switch panel {
+        case .keys where cursorPad && !adding:
+            buildCursorPad()
         case .keys:
             if lang == .english {
                 buildLetters(rows: ["qwertyuiop", "asdfghjkl", "zxcvbnm"])
@@ -501,8 +503,134 @@ extension KeyboardViewController {
             self.lastSuggestSignature = nil
             self.refreshSuggestions()
         }
+        // 꾹 눌렀다가 움직이지 않고 떼면 방향키 패드가 남는다 (글자 자판에서만)
+        k.onCursorHoldRelease = { [weak self] in
+            guard let self = self, self.panel == .keys, !self.adding else { return }
+            self.cursorPad = true
+            self.rebuild()
+        }
         spaceKeyRef = k
         return k
+    }
+
+    // MARK: - 커서 방향키 패드
+
+    /// 커서 모드에서 꾹 눌렀다 떼면 나오는 방향키 패드. [완료]·한/영·상단바 버튼으로 나간다.
+    func buildCursorPad() {
+        func padKey(_ title: String?, symbol: String? = nil, sub: String? = nil, fn: Bool = false,
+                    repeats: Bool = false, _ action: @escaping () -> Void) -> KeyButton {
+            let k: KeyButton
+            if let symbol = symbol {
+                k = iconKey(symbol, id: "pad", label: sub ?? title ?? "", fn: fn)
+            } else {
+                k = makeKey(title ?? "", id: "pad", fn: fn, font: 15)
+            }
+            k.slideEnabled = false
+            k.layer.cornerRadius = 8
+            k.accessibilityLabel = sub ?? title
+            k.onTap = { [weak self] _ in
+                self?.resetComposer()
+                action()
+                self?.padMoved()
+            }
+            if repeats {
+                k.repeatDelay = 0.35
+                k.repeatInterval = 0.07
+                k.onRepeat = { [weak self] in
+                    self?.resetComposer()
+                    action()
+                    self?.padMoved()
+                }
+            }
+            if let sub = sub, symbol != nil {
+                // 아이콘 아래 작은 설명
+                let l = UILabel()
+                l.text = sub
+                l.font = .systemFont(ofSize: 10)
+                l.textColor = theme.muted
+                l.isUserInteractionEnabled = false
+                l.translatesAutoresizingMaskIntoConstraints = false
+                k.addSubview(l)
+                NSLayoutConstraint.activate([
+                    l.centerXAnchor.constraint(equalTo: k.centerXAnchor),
+                    l.bottomAnchor.constraint(equalTo: k.bottomAnchor, constant: -4),
+                ])
+            }
+            return k
+        }
+        let proxy = textDocumentProxy
+        let up = padKey(nil, symbol: "chevron.up", sub: "윗줄", repeats: true) { [weak self] in self?.moveCursorLines(-1) }
+        let down = padKey(nil, symbol: "chevron.down", sub: "아랫줄", repeats: true) { [weak self] in self?.moveCursorLines(1) }
+        let left = padKey(nil, symbol: "chevron.left", sub: "한 글자", repeats: true) { proxy.adjustTextPosition(byCharacterOffset: -1) }
+        let right = padKey(nil, symbol: "chevron.right", sub: "한 글자", repeats: true) { proxy.adjustTextPosition(byCharacterOffset: 1) }
+        let home = padKey("⇤ 줄 처음") { [weak self] in self?.moveToLineEdge(start: true) }
+        let end = padKey("줄 끝 ⇥") { [weak self] in self?.moveToLineEdge(start: false) }
+        let wordL = padKey("◀ 단어", repeats: true) { [weak self] in self?.moveByWord(forward: false) }
+        let wordR = padKey("단어 ▶", repeats: true) { [weak self] in self?.moveByWord(forward: true) }
+        let paste = padKey("붙여넣기", fn: true) { [weak self] in
+            if let t = UIPasteboard.general.string, !t.isEmpty { self?.docInsert(t) }
+        }
+        let docEnd = padKey("맨 끝", fn: true) { [weak self] in self?.moveToDocumentEnd(0) {} }
+        let back = backspaceKey()
+        back.layer.cornerRadius = 8
+        let hint = UILabel()
+        hint.text = "꾹 누르면\n계속 이동"
+        hint.numberOfLines = 2
+        hint.textAlignment = .center
+        hint.font = .systemFont(ofSize: 12)
+        hint.textColor = theme.muted
+
+        // 맨 아래: 밀어서 이동하는 트랙패드 칸 + [완료]
+        let strip = KeyButton()
+        strip.id = "pad.track"
+        style(strip, fn: false)
+        strip.layer.cornerRadius = 8
+        strip.setTitle("◀ ▶  밀어서 이동", for: .normal)
+        strip.titleLabel?.font = .systemFont(ofSize: 14)
+        strip.setTitleColor(theme.muted, for: .normal)
+        strip.cursorStep = 9
+        strip.onCursorMove = { [weak self] steps in
+            guard let self = self else { return }
+            self.textDocumentProxy.adjustTextPosition(byCharacterOffset: steps)
+            self.padMoved()
+        }
+        strip.onCursorLine = { [weak self] lines in
+            self?.moveCursorLines(lines)
+            self?.padMoved()
+        }
+        strip.onCursorStart = { [weak self] in self?.resetComposer() }
+        let done = makeKey("완료", id: "pad.done", font: 16)
+        done.slideEnabled = false
+        done.layer.cornerRadius = 8
+        done.backgroundColor = UIColor.systemBlue
+        done.setTitleColor(.white, for: .normal)
+        done.titleLabel?.font = .boldSystemFont(ofSize: 16)
+        done.onTap = { [weak self] _ in self?.closeCursorPad() }
+
+        let rows: [UIView] = [
+            hstack([home, up, end, back], spacing: 6),
+            hstack([left, hint, right, paste], spacing: 6),
+            hstack([wordL, down, wordR, docEnd], spacing: 6),
+        ]
+        let last = hstack([strip, done], spacing: 6, equal: false)
+        done.widthAnchor.constraint(equalTo: strip.widthAnchor, multiplier: 1.0 / 3.0, constant: -4).isActive = true
+        fillRows(rows + [last], spacing: 8, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
+    }
+
+    func closeCursorPad() {
+        guard cursorPad else { return }
+        cursorPad = false
+        rebuild()
+    }
+
+    /// 패드로 움직였을 때: 커서 앞뒤 글자를 다시 읽게 하고 추천을 새로 그린다
+    func padMoved() {
+        ctxCache = nil
+        if settings.haptic {
+            selectionFeedback.selectionChanged()
+            selectionFeedback.prepare()
+        }
+        refreshSuggestions()
     }
 
     /// 줄바꿈 키. 칸이 알려 주는 이름(검색, 이동, 보내기 …)이 있으면 글자로, 없으면 줄바꿈 모양.

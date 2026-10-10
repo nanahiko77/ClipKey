@@ -158,6 +158,10 @@ final class KeyButton: UIButton {
     static let cursorHoldTime: TimeInterval = 0.4
     private var cursorHoldTimer: Timer?
     private var lastPoint: CGPoint = .zero
+    /// 꾹 눌러 커서 모드가 됐는지 (밀어서 시작한 것과 구분)
+    private var cursorByHold = false
+    /// 꾹 눌러 커서 모드가 된 뒤 움직이지 않고 뗐을 때 (방향키 패드를 띄운다)
+    var onCursorHoldRelease: (() -> Void)?
 
     private let hintLabel = UILabel()
     private var startX: CGFloat = 0
@@ -303,10 +307,12 @@ final class KeyButton: UIButton {
         lastPoint = touch.location(in: self)
         swipeCount = nil
         cursorX = nil
+        cursorByHold = false
         if cursorStep > 0 {
             cursorHoldTimer?.invalidate()
             let t = Timer(timeInterval: KeyButton.cursorHoldTime, repeats: false) { [weak self] _ in
                 self?.startCursorMode()
+                self?.cursorByHold = true
             }
             RunLoop.main.add(t, forMode: .common)
             cursorHoldTimer = t
@@ -394,7 +400,10 @@ final class KeyButton: UIButton {
         cursorHoldTimer = nil
         guard cursorX != nil else { return false }
         cursorX = nil
+        let stayed = cursorByHold && cursorDir == 0
+        cursorByHold = false
         onCursorEnd?()
+        if stayed { onCursorHoldRelease?() }
         return true
     }
 

@@ -59,6 +59,8 @@ final class KeyboardViewController: UIInputViewController {
     var previewSticker: String?
     var toolbarHeight: NSLayoutConstraint?
     var viewHeight: NSLayoutConstraint?
+    /// 커서 방향키 패드를 보여 주는 중
+    var cursorPad = false
     /// iOS 26 이 다른 회사 키보드 위에 두는 띠(약 17pt)로 올려 그린 만큼. 0 이면 띠를 못 쓰는 것.
     var topLift: CGFloat = 0
     var suggestTop: NSLayoutConstraint?
@@ -528,6 +530,7 @@ final class KeyboardViewController: UIInputViewController {
         pasteTimer = nil
         stopDelete()
         resetComposer()
+        cursorPad = false
         addBuffer = nil
         cursorDragging = false
         notice = nil
@@ -560,6 +563,7 @@ final class KeyboardViewController: UIInputViewController {
         let was = isDark
         resolveTheme()
         let fieldChanged = checkField()
+        if fieldChanged { cursorPad = false }        // 다른 입력 칸으로 가면 패드는 닫는다
         if was != isDark || fieldChanged {
             rebuild()
         } else {
@@ -587,6 +591,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func rebuild() {
+        if panel != .keys { cursorPad = false }      // 다른 화면으로 가면 패드는 닫는다
         resolveTheme()
         disarm()
         // 바탕은 투명하게: iOS 가 깐 키보드 판의 색이 그대로 보여 경계 없이 하나로 보인다
@@ -620,7 +625,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(isLandscape)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(cursorPad)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
@@ -1510,6 +1515,11 @@ final class KeyboardViewController: UIInputViewController {
 
     @objc func langTapped() {
         resetComposer()
+        if cursorPad {
+            // 패드에서는 한/영이 "나가기"
+            closeCursorPad()
+            return
+        }
         if panel == .symbols || panel == .numpad {
             panel = .keys
         } else {
@@ -1712,6 +1722,41 @@ final class KeyboardViewController: UIInputViewController {
         lastSuggestSignature = nil
         refreshSuggestions()
         updateUndoButtons()
+    }
+
+    /// 줄 처음 / 줄 끝으로
+    func moveToLineEdge(start: Bool) {
+        let proxy = textDocumentProxy
+        if start {
+            let before = proxy.documentContextBeforeInput ?? ""
+            let col = before.lastIndex(of: "\n").map { before.distance(from: before.index(after: $0), to: before.endIndex) } ?? before.count
+            if col > 0 { proxy.adjustTextPosition(byCharacterOffset: -col) }
+        } else {
+            let after = proxy.documentContextAfterInput ?? ""
+            let rest = after.firstIndex(of: "\n").map { after.distance(from: after.startIndex, to: $0) } ?? after.count
+            if rest > 0 { proxy.adjustTextPosition(byCharacterOffset: rest) }
+        }
+    }
+
+    /// 단어 단위로: 띄어쓰기를 건너뛴 뒤 다음 띄어쓰기(또는 줄바꿈)까지
+    func moveByWord(forward: Bool) {
+        let proxy = textDocumentProxy
+        if forward {
+            let after = Array(proxy.documentContextAfterInput ?? "")
+            var i = 0
+            while i < after.count, after[i] == " " { i += 1 }
+            if i < after.count, after[i] == "\n" { i += 1 }
+            while i < after.count, after[i] != " ", after[i] != "\n" { i += 1 }
+            proxy.adjustTextPosition(byCharacterOffset: max(i, after.isEmpty ? 1 : 0))
+        } else {
+            let before = Array(proxy.documentContextBeforeInput ?? "")
+            var i = before.count
+            while i > 0, before[i - 1] == " " { i -= 1 }
+            if i > 0, before[i - 1] == "\n" { i -= 1 }
+            while i > 0, before[i - 1] != " ", before[i - 1] != "\n" { i -= 1 }
+            let n = before.count - i
+            proxy.adjustTextPosition(byCharacterOffset: -max(n, before.isEmpty ? 1 : 0))
+        }
     }
 
     @objc func cursorLeft() {
