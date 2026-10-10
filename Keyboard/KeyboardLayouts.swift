@@ -211,10 +211,13 @@ extension KeyboardViewController {
             again.backgroundColor = theme.key
             toolbar.addArrangedSubview(again)
         case .clipboard:
-            toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
-            toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
+            // 이모지 버튼이 들어가 칸이 빠듯해서 한/ENG 폭을 조금 줄인다 (작은 아이폰에서도 한 줄에 들어가게)
+            toolbar.addArrangedSubview(toolButton("한", width: 40, label: "한글 자판으로", action: #selector(toHangul)))
+            toolbar.addArrangedSubview(toolButton("ENG", width: 48, label: "영문 자판으로", action: #selector(toEnglish)))
             toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, active: true,
                                                   label: "클립보드 닫기", action: #selector(backToKeys)))
+            toolbar.addArrangedSubview(toolButton(symbol: "smile", width: 40, plain: true,
+                                                  label: "이모지", action: #selector(openEmoji)))
             toolbar.addArrangedSubview(toolbarSpacer())   // 제목 없이 빈 곳 (다른 화면과 맞춘다)
             toolbar.addArrangedSubview(toolButton(symbol: "search", width: 40, plain: true,
                                                   label: "클립보드 검색", action: #selector(startClipSearch)))
@@ -228,6 +231,8 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
             toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
                                                   label: "클립보드 열기", action: #selector(clipTapped)))
+            toolbar.addArrangedSubview(toolButton(symbol: "smile", width: 40, plain: true,
+                                                  label: "이모지", action: #selector(openEmoji)))
             toolbar.addArrangedSubview(toolbarSpacer())
             toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, active: true,
                                                   label: "설정 닫기", action: #selector(clipTapped)))
