@@ -466,7 +466,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         clearEditHistory()
-        capture()
+        // 클립보드 읽기는 키보드가 화면에 뜬 뒤로 미룬다 (사진을 읽느라 늦게 뜨면 iOS 가 기본 키보드를 띄운다)
         ctxCache = nil
         // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
         resolveTheme()
@@ -485,8 +485,19 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    /// 이 키보드 프로세스에서 한 번만 하는 정리 (사진·스티커 파일)
+    static var didMaintenance = false
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.capture() }
+        if !KeyboardViewController.didMaintenance {
+            KeyboardViewController.didMaintenance = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.store.maintenance()
+                self?.stickers.cleanUp()
+            }
+        }
         // 창에 붙은 뒤에야 창의 화면 모드를 읽을 수 있다. 다르면 다시 그린다.
         recheckTheme()
         // 키보드가 닫힌 상태에서 처음 뜰 때 iOS 가 예전 높이로 잘라 두는 일이 있어서(위가 잘림),
@@ -627,8 +638,16 @@ final class KeyboardViewController: UIInputViewController {
         if pb.hasStrings, let text = pb.string {
             guard let clip = store.add(text) else { return }
             freshClip = clip
-        } else if settings.savePhotos, pb.hasImages, let data = pastedImageData(pb) {
-            guard store.addImage(data) != nil else { return }
+        } else if settings.savePhotos, pb.hasImages {
+            // 사진 데이터는 클 수 있어서 뒤에서 읽고, 다 읽으면 목록에 넣는다
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self = self, let data = self.pastedImageData(pb) else { return }
+                DispatchQueue.main.async {
+                    guard self.store.addImage(data) != nil else { return }
+                    if self.panel == .clipboard { self.reloadClips() } else { self.refreshSuggestions() }
+                }
+            }
+            return
         } else {
             return
         }

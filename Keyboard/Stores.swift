@@ -351,6 +351,11 @@ final class ClipStore {
         imageDir = dir.appendingPathComponent("images", isDirectory: true)
         try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
         load()
+        // 사진 중복 정리·남은 파일 지우기는 키보드가 뜬 뒤에 한다 (maintenance). 뜨는 시간을 줄이려고.
+    }
+
+    /// 키보드가 뜬 뒤 한가할 때 한 번: 같은 사진 정리, 목록에 없는 사진 파일 지우기
+    func maintenance() {
         removeDuplicateImages()
         purgeOrphans()
     }
@@ -829,7 +834,7 @@ final class StickerStore {
            let saved = try? JSONDecoder().decode([StickerPack].self, from: data) {
             packs = saved
         }
-        cleanUp()            // 지난번에 지운 팩·스티커 파일 정리
+        // 지난번에 지운 팩·스티커 파일 정리(cleanUp)는 키보드가 뜬 뒤에 한다
     }
 
     func rename(_ id: UUID, to name: String) {
