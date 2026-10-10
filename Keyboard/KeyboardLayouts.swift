@@ -147,6 +147,12 @@ extension KeyboardViewController {
                     undoToolButton = u
                     redoToolButton = r
                     updateUndoButtons()
+                case "stage":
+                    let on = settings.stagingToggle
+                    let b = tool("textfield", on ? "입력 칸 끄기" : "입력 칸 켜기", #selector(stageToggleTapped),
+                                 color: on ? UIColor.systemBlue : nil)
+                    if on { b.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.15) }
+                    add(b)
                 case "hide":
                     let hideB = tool("keyboard.down", "키보드 닫기", #selector(hideKeyboard))
                     add(hideB)
@@ -615,6 +621,14 @@ extension KeyboardViewController {
         let last = hstack([strip, done], spacing: 6, equal: false)
         done.widthAnchor.constraint(equalTo: strip.widthAnchor, multiplier: 1.0 / 3.0, constant: -4).isActive = true
         fillRows(rows + [last], spacing: 8, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
+    }
+
+    @objc func stageToggleTapped() {
+        haptic()
+        resetComposer()
+        flushStaged()
+        settings.stagingToggle.toggle()
+        rebuild()
     }
 
     func closeCursorPad() {

@@ -123,6 +123,12 @@ final class KeyboardViewController: UIInputViewController {
     let toolbar = UIStackView()
     /// 추천 줄 (B안: 도구 줄 위에 따로 둔다). 글자 자판·숫자 화면에서만 보인다.
     let suggestBar = UIView()
+    /// 입력 영역 줄: 키보드 맨 위의 큰 입력 칸과 [보내기]. 입력 영역을 쓸 때만 보인다.
+    let stageBar = UIView()
+    let stageLabel = UILabel()
+    let stageSend = UIButton(type: .system)
+    var stageBarHeight: NSLayoutConstraint?
+    static let stageBarFull: CGFloat = 48
     var suggestBarHeight: NSLayoutConstraint?
     /// 추천 줄 = 위 여유 6 + 글자 줄 28. 키보드가 닫힌 상태에서 처음 뜰 때 iOS 가 위쪽 띠(17pt) 없이
     /// 판의 둥근 윗변을 바로 위에 붙이는데, 그때 글자가 윗변에 붙어 잘려 보이지 않게 6 을 띄운다.
@@ -236,7 +242,7 @@ final class KeyboardViewController: UIInputViewController {
             suggestStack.heightAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.heightAnchor),
         ])
 
-        for v in [suggestBar, toolbar, divider, keyArea] as [UIView] {
+        for v in [stageBar, suggestBar, toolbar, divider, keyArea] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(v)
         }
@@ -289,7 +295,11 @@ final class KeyboardViewController: UIInputViewController {
         // 클립보드·설정(과 그 안의 단어 관리, 상단바 꾸미기)은 목록이 길어서 설정한 만큼 더 높게
         let tall = panel == .clipboard || panel == .settings || panel == .words || panel == .toolbarEdit
         let more = tall ? CGFloat(settings.panelExtra) * (isLandscape ? 0.4 : 1) : 0
-        viewHeight?.constant = (KeyboardViewController.suggestBarFull + t + keys + more).rounded() - topLift
+        let stage: CGFloat = stagingWanted && !adding ? KeyboardViewController.stageBarFull : 0
+        stageBarHeight?.constant = stage
+        stageBar.isHidden = stage == 0
+        if stage > 0 { updateStageBar() }
+        viewHeight?.constant = (KeyboardViewController.suggestBarFull + t + keys + more + stage).rounded() - topLift
         // 추천 줄이 없는 화면(클립보드·설정 …)은 버튼이 가장자리에 붙지 않게 좌우를 더 띄운다
         toolbar.layoutMargins.left = showBar ? 6 : 12
         toolbar.layoutMargins.right = showBar ? 6 : 12
@@ -304,9 +314,80 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
-        let c = suggestBar.topAnchor.constraint(equalTo: view.topAnchor)
+        // 맨 위는 입력 영역 줄(보통은 높이 0), 그 아래가 추천 줄
+        let c = stageBar.topAnchor.constraint(equalTo: view.topAnchor)
         suggestTop = c
+        let h = stageBar.heightAnchor.constraint(equalToConstant: 0)
+        stageBarHeight = h
+        NSLayoutConstraint.activate([
+            h,
+            stageBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stageBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            suggestBar.topAnchor.constraint(equalTo: stageBar.bottomAnchor),
+        ])
+        buildStageBar()
         return c
+    }
+
+    func buildStageBar() {
+        stageBar.clipsToBounds = true
+        stageBar.isHidden = true
+        let box = UIView()
+        box.layer.cornerRadius = 10
+        box.layer.borderWidth = 2
+        box.layer.borderColor = UIColor.systemBlue.cgColor
+        box.translatesAutoresizingMaskIntoConstraints = false
+        stageBar.addSubview(box)
+        stageLabel.font = .systemFont(ofSize: 19)
+        stageLabel.lineBreakMode = .byTruncatingHead
+        stageLabel.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(stageLabel)
+        stageSend.setTitle("보내기", for: .normal)
+        stageSend.titleLabel?.font = .boldSystemFont(ofSize: 15)
+        stageSend.backgroundColor = .systemBlue
+        stageSend.setTitleColor(.white, for: .normal)
+        stageSend.layer.cornerRadius = 10
+        stageSend.translatesAutoresizingMaskIntoConstraints = false
+        stageSend.addTarget(self, action: #selector(stageSendTapped), for: .touchUpInside)
+        stageBar.addSubview(stageSend)
+        NSLayoutConstraint.activate([
+            box.topAnchor.constraint(equalTo: stageBar.topAnchor, constant: 6),
+            box.leadingAnchor.constraint(equalTo: stageBar.leadingAnchor, constant: 8),
+            box.heightAnchor.constraint(equalToConstant: 40),
+            stageSend.leadingAnchor.constraint(equalTo: box.trailingAnchor, constant: 8),
+            stageSend.trailingAnchor.constraint(equalTo: stageBar.trailingAnchor, constant: -8),
+            stageSend.topAnchor.constraint(equalTo: box.topAnchor),
+            stageSend.heightAnchor.constraint(equalToConstant: 40),
+            stageSend.widthAnchor.constraint(equalToConstant: 64),
+            stageLabel.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
+            stageLabel.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10),
+            stageLabel.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+        ])
+        stageBox = box
+    }
+
+    /// 입력 영역 칸의 글자와 색을 지금 상태로
+    func updateStageBar() {
+        guard !stageBar.isHidden else { return }
+        stageBox?.backgroundColor = theme.letterKey
+        if staged.isEmpty {
+            let t = NSMutableAttributedString(string: "▏", attributes: [.foregroundColor: UIColor.systemBlue])
+            t.append(NSAttributedString(string: "여기에 먼저 입력 · [보내기]나 줄바꿈으로 전송",
+                                        attributes: [.foregroundColor: theme.muted, .font: UIFont.systemFont(ofSize: 14)]))
+            stageLabel.attributedText = t
+        } else {
+            let t = NSMutableAttributedString(string: staged, attributes: [.foregroundColor: theme.text])
+            t.append(NSAttributedString(string: "▏", attributes: [.foregroundColor: UIColor.systemBlue]))
+            stageLabel.attributedText = t
+        }
+        stageSend.alpha = staged.isEmpty ? 0.5 : 1
+    }
+
+    @objc func stageSendTapped() {
+        haptic()
+        resetComposer()
+        flushStaged()
+        refreshSuggestions()
     }
 
     // MARK: 위쪽 띠
@@ -628,7 +709,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(cursorPad)|\(isLandscape)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(cursorPad)|\(stagingWanted)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.
@@ -761,16 +842,28 @@ final class KeyboardViewController: UIInputViewController {
     /// 사파리 웹 입력창은 글자를 지웠다 다시 넣을 때마다 커서가 깜빡여서, 조합 중에는 앱을 건드리지 않는다.
     var staged = ""
     var stagedTimer: Timer?
+    weak var stageBox: UIView?
 
     var staging: Bool { stagingWanted && addBuffer == nil }
 
-    /// 입력 영역을 쓸지: 항상, 또는 브라우저(사파리·크롬 등)에서만
+    /// 입력 영역을 쓸지: 0 끄기, 1 상단바 버튼으로, 2 자동 추측(+버튼), 3 항상
     var stagingWanted: Bool {
+        guard panel == .keys || panel == .symbols else { return false }
         switch settings.stagedMode {
-        case 2: return true
-        case 1: return isBrowserHost
+        case 3: return true
+        case 2: return settings.stagingToggle || isBrowserHost || looksLikeWebForm
+        case 1: return settings.stagingToggle || isBrowserHost
         default: return false
         }
+    }
+
+    /// 웹페이지 입력칸처럼 보이는지 (어느 앱인지 알 수 없을 때의 추측):
+    /// 웹 양식의 칸은 줄바꿈 키가 "이동"이나 "검색"이고 일반 글자 자판이다. 주소창(URL 자판)은 뺀다.
+    var looksLikeWebForm: Bool {
+        let proxy = textDocumentProxy
+        let rk = proxy.returnKeyType ?? .default
+        let kt = proxy.keyboardType ?? .default
+        return (rk == .go || rk == .search) && (kt == .default || kt == .asciiCapable)
     }
 
     /// 지금 키보드를 띄운 앱의 번들 ID. iOS 가 공식으로 알려 주지 않아서, 숨은 값을 조심스럽게 읽어 본다.
@@ -811,6 +904,7 @@ final class KeyboardViewController: UIInputViewController {
         ownEditTime = Date()
         textDocumentProxy.insertText(t)
         lastSuggestSignature = nil
+        updateStageBar()
     }
 
     /// 손을 잠깐 멈추면 보낸다 (입력 영역에만 오래 남아 있지 않게)
@@ -849,11 +943,11 @@ final class KeyboardViewController: UIInputViewController {
             updateAddField()
         } else if staging {
             staged += s
-            // 단어가 끝나는 글자(간격·문장부호·줄바꿈 등)가 들어오면 한 번에 보낸다
-            if s.contains(where: { !($0.isLetter || $0.isNumber) }) {
+            if s.contains("\n") {
+                // 줄바꿈: 모은 문장과 줄바꿈(웹 양식이면 전송)을 함께 보낸다
                 flushStaged()
             } else {
-                scheduleStagedFlush()
+                updateStageBar()
             }
         } else {
             proxyDo { $0.insertText(s) }
@@ -869,7 +963,7 @@ final class KeyboardViewController: UIInputViewController {
             updateAddField()
         } else if !staged.isEmpty {
             staged.removeLast()
-            if staging { scheduleStagedFlush() }
+            updateStageBar()
         } else {
             proxyDo { $0.deleteBackward() }
         }
@@ -2059,27 +2153,7 @@ final class KeyboardViewController: UIInputViewController {
         suggestStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         suggestItems = items
 
-        var stagedWidth: CGFloat = 0
-        if !staged.isEmpty {
-            // 입력 영역: 아직 앱에 보내지 않은 글자를 맨 앞에 보여 준다 (커서 막대와 함께)
-            let l = UILabel()
-            l.text = " " + staged + "▏"
-            l.font = .boldSystemFont(ofSize: 16)
-            l.textColor = theme.text
-            l.backgroundColor = theme.letterKey
-            l.layer.cornerRadius = 7
-            l.layer.masksToBounds = true
-            l.layer.borderWidth = 1.5
-            l.layer.borderColor = UIColor.systemBlue.cgColor
-            l.textAlignment = .center
-            l.lineBreakMode = .byTruncatingHead
-            let w = min(160, l.intrinsicContentSize.width + 12)
-            l.widthAnchor.constraint(equalToConstant: w).isActive = true
-            l.heightAnchor.constraint(equalToConstant: 26).isActive = true
-            suggestStack.addArrangedSubview(l)
-            suggestStack.setCustomSpacing(6, after: l)
-            stagedWidth = w + 6
-        }
+        let stagedWidth: CGFloat = 0
         if let undo = undo {
             // 방금 자동으로 고쳤으면 되돌리기 칩을 먼저 보여 준다
             let chip = undoChip(undo, bold: false)

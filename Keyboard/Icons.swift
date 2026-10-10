@@ -64,6 +64,11 @@ enum Icon {
             stroke(poly([(12, 5), (12, 19)]), line)
             stroke(poly([(5, 12), (19, 12)]), line)
 
+        case "textfield":
+            // 입력 칸: 둥근 네모 안에 커서 막대
+            stroke(UIBezierPath(roundedRect: CGRect(x: 3, y: 7, width: 18, height: 10), cornerRadius: 2), line)
+            stroke(poly([(8, 10), (8, 14)]), line)
+
         case "minus":
             stroke(poly([(6, 12), (18, 12)]), line)
 

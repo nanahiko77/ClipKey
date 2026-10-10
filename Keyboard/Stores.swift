@@ -114,10 +114,15 @@ final class Settings {
         set { d.set(min(max(newValue, Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound), forKey: "longPressTime") }
     }
     /// 입력 영역: 단어를 키보드 안에서 다 친 뒤 앱에 한 번에 보낸다 (사파리 웹 입력창 깜빡임 줄이기)
-    /// 0 끄기, 1 브라우저에서만(자동), 2 항상
+    /// 0 끄기, 1 상단바 버튼으로, 2 자동 추측(+버튼), 3 항상
     var stagedMode: Int {
-        get { min(max(d.object(forKey: "stagedMode") as? Int ?? 1, 0), 2) }
-        set { d.set(min(max(newValue, 0), 2), forKey: "stagedMode") }
+        get { min(max(d.object(forKey: "stagedMode2") as? Int ?? 2, 0), 3) }
+        set { d.set(min(max(newValue, 0), 3), forKey: "stagedMode2") }
+    }
+    /// 상단바의 [입력 칸] 버튼으로 켠 상태 (끌 때까지 유지)
+    var stagingToggle: Bool {
+        get { d.bool(forKey: "stagingToggle") }
+        set { d.set(newValue, forKey: "stagingToggle") }
     }
 
     /// 나랏글 줄바꿈 키를 한 줄 위(123 .,?! 자리)로
@@ -184,7 +189,7 @@ final class Settings {
     // MARK: 상단바 배치 (8칸)
 
     /// 상단바에 넣을 수 있는 모든 도구. 화살표와 되돌리기는 2칸.
-    static let toolbarAllItems = ["clipboard", "emoji", "settings", "addword", "hide", "arrows", "undo"]
+    static let toolbarAllItems = ["clipboard", "emoji", "settings", "addword", "hide", "stage", "arrows", "undo"]
     static let toolbarCapacity = 8
     static func toolbarSlots(_ item: String) -> Int { item == "arrows" || item == "undo" ? 2 : 1 }
     /// 비어 있는 한 칸

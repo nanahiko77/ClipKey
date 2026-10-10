@@ -8,13 +8,13 @@ import UIKit
 final class ToolbarEditor: UIView {
     static let names: [String: String] = [
         "clipboard": "클립보드", "settings": "설정", "addword": "단어 추가", "emoji": "이모지",
-        "arrows": "커서 화살표", "undo": "되돌리기", "hide": "닫기",
+        "arrows": "커서 화살표", "undo": "되돌리기", "hide": "닫기", "stage": "입력 칸",
     ]
     static let icons: [String: String] = [
         "clipboard": "clipboard", "settings": "slider.horizontal.3", "addword": "plus", "emoji": "smile",
-        "hide": "keyboard.down",
+        "hide": "keyboard.down", "stage": "textfield",
     ]
-    static let singles = ["clipboard", "emoji", "settings", "addword", "hide"]
+    static let singles = ["clipboard", "emoji", "settings", "addword", "hide", "stage"]
     static let doubles = ["arrows", "undo"]
 
     private let settings: Settings

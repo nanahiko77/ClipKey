@@ -512,13 +512,13 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             ], nil),
             ("입력", [
                 settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
-                settingRow("입력 영역 (웹 깜빡임 줄이기)", segment(["끄기", "브라우저", "항상"], selected: settings.stagedMode, tag: 9)),
+                settingRow("입력 영역 (웹 깜빡임)", segment(["끄기", "버튼", "자동", "항상"], selected: settings.stagedMode, tag: 9)),
                 padded(sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
                                  min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1)),
                 padded(sliderRow("길게 누르기 시간", note: "보조 글자 말풍선과 반복 입력이 시작되는 시간 · 최소 0.3초",
                                  min: Float(Settings.longPressRange.lowerBound), max: Float(Settings.longPressRange.upperBound),
                                  value: Float(settings.longPressTime), low: "짧게", high: "길게", tag: 2)),
-            ], "입력 영역: 치는 단어를 추천 줄 맨 앞 칸에 모았다가 간격·문장부호를 누르거나 잠깐 멈추면 앱에 한 번에 보내요. 사파리 웹 입력창의 커서 깜빡임이 줄어요. '브라우저'는 사파리·크롬 등에서만 자동으로 켜요."),
+            ], "입력 영역: 키보드 맨 위 큰 칸에 먼저 쓰고 [보내기]나 줄바꿈으로 앱에 한 번에 보내요. 사파리 웹 입력창 깜빡임이 없어져요. 버튼: 상단바 [입력 칸] 버튼으로 켜고 끔 · 자동: 웹 양식 칸(줄바꿈 키가 이동·검색)이면 저절로 + 버튼"),
             ("상단바", [
                 navRow("상단바 꾸미기", value: nil, action: #selector(openToolbarEdit)),
                 settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
