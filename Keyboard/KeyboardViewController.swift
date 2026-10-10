@@ -236,9 +236,9 @@ final class KeyboardViewController: UIInputViewController {
             v.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(v)
         }
-        // 추천 글자를 조금 더 위로 (기본 키보드처럼 위 여백을 줄인다). 4pt 만큼은 줄 밖으로 그려도 되게.
-        suggestBar.clipsToBounds = false
-        suggestScroll.transform = CGAffineTransform(translationX: 0, y: -4)
+        // 추천 글자를 위로 올려 그리지 않는다: 키보드가 닫힌 상태에서 처음 뜰 때 iOS 가 위쪽 띠 없이
+        // 판의 둥근 윗변을 우리 화면 바로 위에 붙여서, 올려 그린 글자가 잘려 보였다
+        suggestBar.clipsToBounds = true
         suggestScroll.translatesAutoresizingMaskIntoConstraints = false
         suggestBar.addSubview(suggestScroll)
         let barHeight = suggestBar.heightAnchor.constraint(equalToConstant: KeyboardViewController.suggestBarFull)
