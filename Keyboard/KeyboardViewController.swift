@@ -554,16 +554,10 @@ final class KeyboardViewController: UIInputViewController {
         // 키보드 창의 화면 모드를 본다 (기본 키보드도 이것을 따른다).
         // UIScreen.main 은 키보드 안에서 엉뚱한 값을 줄 때가 있고, 우리 view 는 모드를 덮어써 두었으므로
         // 덮어쓰지 않은 창(window) → 윗 뷰 → 이 화면 컨트롤러 순으로 읽는다.
-        // 앱이 입력 칸에 밝은/어두운 키보드를 직접 정해 주면(keyboardAppearance) 그것을 먼저 따른다.
-        // Claude 앱처럼 앱 안의 테마가 아이폰 화면 모드와 다를 때 기본 키보드도 이 값을 따른다.
-        // 정해 주지 않으면(.default) 키보드 창의 화면 모드를 본다.
+        // 키보드 창의 화면 모드를 따른다 (아이폰이 그리는 키보드 판도 이것을 따른다).
+        // 앱의 키보드 요청(keyboardAppearance)은 보지 않는다: Claude 앱은 아이폰 모드와 다르게 요청해서 판과 어긋났다.
         let source = view.window?.traitCollection ?? view.superview?.traitCollection ?? traitCollection
-        let systemDark: Bool
-        switch textDocumentProxy.keyboardAppearance {
-        case .dark: systemDark = true
-        case .light: systemDark = false
-        default: systemDark = source.userInterfaceStyle == .dark
-        }
+        let systemDark = source.userInterfaceStyle == .dark
         switch settings.themeMode {
         case 1: isDark = false
         case 2: isDark = true
