@@ -126,6 +126,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 상단바를 접었을 때 추천 줄 맨 앞의 [한/EN] [▦]
     let leadStack = UIStackView()
     var leadGap: NSLayoutConstraint?
+    var leadZero: NSLayoutConstraint?
     /// 입력 영역 줄: 키보드 맨 위의 큰 입력 칸과 [보내기]. 입력 영역을 쓸 때만 보인다.
     let stageBar = UIView()
     let stageLabel = UILabel()
@@ -335,6 +336,8 @@ final class KeyboardViewController: UIInputViewController {
             leadStack.bottomAnchor.constraint(equalTo: suggestBar.bottomAnchor, constant: -1),
             leadStack.heightAnchor.constraint(equalToConstant: 30),
         ])
+        // 비어 있는 스택은 폭이 정해지지 않아 늘어날 수 있다 (펼친 상태에서 추천 단어가 오른쪽으로 밀렸다)
+        leadZero = leadStack.widthAnchor.constraint(equalToConstant: 0)
     }
 
     /// 상단바를 접은 상태인지 (글자·숫자 자판에서만, 단어 추가 중이 아닐 때)
@@ -351,6 +354,7 @@ final class KeyboardViewController: UIInputViewController {
             leadStack.addArrangedSubview(line)
         }
         leadStack.isHidden = !toolbarFolded
+        leadZero?.isActive = !toolbarFolded
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
