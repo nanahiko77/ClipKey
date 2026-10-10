@@ -376,6 +376,21 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // 창에 붙은 뒤에야 창의 화면 모드를 읽을 수 있다. 다르면 다시 그린다.
+        let was = isDark
+        resolveTheme()
+        if was != isDark { rebuild() }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        let was = isDark
+        resolveTheme()
+        if was != isDark { rebuild() }
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         pasteTimer?.invalidate()
@@ -424,9 +439,11 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - 화면 다시 그리기
 
     func resolveTheme() {
-        // 화면 모드만 본다. 앱이 입력 칸에 어두운 키보드를 달라고 해도(keyboardAppearance) iOS 26 기본 키보드는
-        // 화면 모드를 따르므로 같게 한다 (라이트 모드인데 우리 키보드만 어둡게 나오던 것)
-        let systemDark = UIScreen.main.traitCollection.userInterfaceStyle == .dark
+        // 키보드 창의 화면 모드를 본다 (기본 키보드도 이것을 따른다).
+        // UIScreen.main 은 키보드 안에서 엉뚱한 값을 줄 때가 있고, 우리 view 는 모드를 덮어써 두었으므로
+        // 덮어쓰지 않은 창(window) → 윗 뷰 → 이 화면 컨트롤러 순으로 읽는다.
+        let source = view.window?.traitCollection ?? view.superview?.traitCollection ?? traitCollection
+        let systemDark = source.userInterfaceStyle == .dark
         switch settings.themeMode {
         case 1: isDark = false
         case 2: isDark = true
@@ -442,7 +459,12 @@ final class KeyboardViewController: UIInputViewController {
         // 바탕은 투명하게: iOS 가 깐 키보드 판의 색이 그대로 보여 경계 없이 하나로 보인다
         // 단, 완전히 투명하면 iOS 가 그 자리의 터치를 키보드에 주지 않는다 (설정 여백을 밀어도 스크롤이 안 되고,
         // 키 사이 틈을 눌러도 가까운 키가 안 눌렸다). 눈에 안 보일 만큼만 색을 깔아 터치를 받는다.
-        view.backgroundColor = UIColor(white: isDark ? 0 : 1, alpha: 0.015)
+        // 바탕은 기본 키보드 판과 같은 색으로 채운다. 투명하게 두면 지구본으로 키보드를 바꿀 때
+        // 앞 키보드(기본 키보드)의 키가 뒤에 비쳐 겹쳐 보였다. 윗모서리는 키보드 판처럼 둥글게.
+        view.backgroundColor = isDark ? Theme.hex(0x212121) : Theme.hex(0xE1E2E7)
+        view.layer.cornerRadius = 26
+        view.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        view.layer.cornerCurve = .continuous
         divider.backgroundColor = theme.divider.withAlphaComponent(isDark ? 0.6 : 0.45)
         // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다

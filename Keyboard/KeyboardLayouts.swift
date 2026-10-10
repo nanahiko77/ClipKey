@@ -90,61 +90,68 @@ extension KeyboardViewController {
             let langB = toolButton(width: 44, label: "한영 전환", action: #selector(langTapped))
             langB.setAttributedTitle(langTitle(), for: .normal)
             toolbar.addArrangedSubview(langB)
-            // 상단바 꾸미기의 배치대로 (8칸). "gap" 자리가 늘어나는 빈 곳.
+            // 상단바 꾸미기의 배치대로: 한/영 다음 8칸을 같은 폭으로 끝까지 채운다. "gap" 은 비워 둔 칸.
             clipToolButton = nil
             arrowLeftButton = nil
             arrowRightButton = nil
             hideToolButton = nil
             undoToolButton = nil
             redoToolButton = nil
-            let w = toolbarSlotWidth()
+            let slots = UIStackView()
+            slots.axis = .horizontal
+            slots.distribution = .fillEqually
+            slots.alignment = .center
+            slots.spacing = 4
+            slots.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            func add(_ v: UIView) { slots.addArrangedSubview(v) }
+            func tool(_ symbol: String, _ label: String, _ action: Selector, color: UIColor? = nil) -> UIButton {
+                let b = toolButton(symbol: symbol, plain: true, color: color, label: label, action: action)
+                // 칸 폭은 8칸을 같은 폭으로 나눈 값을 따른다 (아이콘 크기로 버티지 않게)
+                b.contentEdgeInsets = .zero
+                b.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                b.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                return b
+            }
             for item in settings.toolbarLayout {
                 switch item {
                 case Settings.toolbarGap:
-                    let spacer = UIView()
-                    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                    spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                    toolbar.addArrangedSubview(spacer)
+                    let empty = UIView()
+                    empty.heightAnchor.constraint(equalToConstant: 36).isActive = true
+                    add(empty)
                 case "clipboard":
-                    let clipB = toolButton(symbol: "clipboard", width: w, plain: true,
-                                           color: theme.accent, label: "클립보드 열기", action: #selector(clipTapped))
-                    toolbar.addArrangedSubview(clipB)
+                    let clipB = tool("clipboard", "클립보드 열기", #selector(clipTapped), color: theme.accent)
+                    add(clipB)
                     clipToolButton = clipB
                 case "settings":
-                    toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: w, plain: true,
-                                                          label: "설정 열기", action: #selector(openSettings)))
+                    add(tool("slider.horizontal.3", "설정 열기", #selector(openSettings)))
                 case "addword":
-                    toolbar.addArrangedSubview(toolButton(symbol: "plus", width: w, plain: true,
-                                                          label: "단어 추가", action: #selector(startAddWordFromToolbar)))
+                    add(tool("plus", "단어 추가", #selector(startAddWordFromToolbar)))
                 case "emoji":
-                    toolbar.addArrangedSubview(toolButton(symbol: "smile", width: w, plain: true,
-                                                          label: "이모지", action: #selector(openEmoji)))
+                    add(tool("smile", "이모지", #selector(openEmoji)))
                 case "arrows":
-                    let l = toolButton(symbol: "chevron.left", width: w, plain: true,
-                                       label: "커서 왼쪽으로", action: #selector(cursorLeft))
-                    let r = toolButton(symbol: "chevron.right", width: w, plain: true,
-                                       label: "커서 오른쪽으로", action: #selector(cursorRight))
-                    toolbar.addArrangedSubview(l)
-                    toolbar.addArrangedSubview(r)
+                    let l = tool("chevron.left", "커서 왼쪽으로", #selector(cursorLeft))
+                    let r = tool("chevron.right", "커서 오른쪽으로", #selector(cursorRight))
+                    add(l)
+                    add(r)
                     arrowLeftButton = l
                     arrowRightButton = r
                 case "undo":
-                    let u = toolButton(symbol: "undo", width: w, plain: true, label: "되돌리기", action: #selector(editUndoTapped))
-                    let r = toolButton(symbol: "redo", width: w, plain: true, label: "다시 하기", action: #selector(editRedoTapped))
-                    toolbar.addArrangedSubview(u)
-                    toolbar.addArrangedSubview(r)
+                    let u = tool("undo", "되돌리기", #selector(editUndoTapped))
+                    let r = tool("redo", "다시 하기", #selector(editRedoTapped))
+                    add(u)
+                    add(r)
                     undoToolButton = u
                     redoToolButton = r
                     updateUndoButtons()
                 case "hide":
-                    let hideB = toolButton(symbol: "keyboard.down", width: w, plain: true,
-                                           label: "키보드 닫기", action: #selector(hideKeyboard))
-                    toolbar.addArrangedSubview(hideB)
+                    let hideB = tool("keyboard.down", "키보드 닫기", #selector(hideKeyboard))
+                    add(hideB)
                     hideToolButton = hideB
                 default:
                     break
                 }
             }
+            toolbar.addArrangedSubview(slots)
         case .emoji:
             buildEmojiToolbar()
         case .clipboard where clipFilter != nil:
