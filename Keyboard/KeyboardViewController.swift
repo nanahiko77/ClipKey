@@ -122,7 +122,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 추천 줄 (B안: 도구 줄 위에 따로 둔다). 글자 자판·숫자 화면에서만 보인다.
     let suggestBar = UIView()
     var suggestBarHeight: NSLayoutConstraint?
-    static let suggestBarFull: CGFloat = 38
+    static let suggestBarFull: CGFloat = 34
     /// 상단바에서 단어 추가를 열었으면 저장·취소 뒤 글자 자판으로 돌아간다
     var addReturnPanel: Panel?
     // 밀어서 연속 입력 중인 키
@@ -224,7 +224,7 @@ final class KeyboardViewController: UIInputViewController {
         suggestScroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
         suggestScroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            suggestScroll.heightAnchor.constraint(equalToConstant: 36),
+            suggestScroll.heightAnchor.constraint(equalToConstant: 34),
             suggestStack.topAnchor.constraint(equalTo: suggestScroll.contentLayoutGuide.topAnchor),
             suggestStack.bottomAnchor.constraint(equalTo: suggestScroll.contentLayoutGuide.bottomAnchor),
             suggestStack.leadingAnchor.constraint(equalTo: suggestScroll.contentLayoutGuide.leadingAnchor),
@@ -273,7 +273,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func rebuildHeights() {
-        viewHeight?.constant = (isLandscape ? 236 : 336) - topLift
+        // 추천 줄을 38 → 34 로 낮춘 만큼 전체도 낮춘다 (키 크기는 그대로)
+        viewHeight?.constant = (isLandscape ? 236 : 332) - topLift
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
@@ -529,9 +530,10 @@ final class KeyboardViewController: UIInputViewController {
         // 바탕은 투명하게: iOS 가 깐 키보드 판의 색이 그대로 보여 경계 없이 하나로 보인다
         // 단, 완전히 투명하면 iOS 가 그 자리의 터치를 키보드에 주지 않는다 (설정 여백을 밀어도 스크롤이 안 되고,
         // 키 사이 틈을 눌러도 가까운 키가 안 눌렸다). 눈에 안 보일 만큼만 색을 깔아 터치를 받는다.
-        // 바탕은 기본 키보드 판과 같은 색으로 채운다. 투명하게 두면 지구본으로 키보드를 바꿀 때
-        // 앞 키보드(기본 키보드)의 키가 뒤에 비쳐 겹쳐 보였다. 윗모서리는 키보드 판처럼 둥글게.
-        view.backgroundColor = isDark ? Theme.hex(0x212121) : Theme.hex(0xE1E2E7)
+        // 바탕은 거의 투명하게: iOS 키보드 판이 그대로 보여 위쪽 띠와 경계 없이 하나로 보인다.
+        // 완전히 투명하면 iOS 가 그 자리의 터치를 주지 않아서 눈에 안 보일 만큼(1.5%)만 색을 깐다.
+        // (지구본으로 바꿀 때 앞 키보드가 잠깐 비칠 수 있다 — 키보드를 내렸다 올리면 사라진다)
+        view.backgroundColor = UIColor(white: isDark ? 0 : 1, alpha: 0.015)
         bandView.backgroundColor = view.backgroundColor
         divider.backgroundColor = theme.divider.withAlphaComponent(isDark ? 0.6 : 0.45)
         // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
@@ -1900,7 +1902,7 @@ final class KeyboardViewController: UIInputViewController {
         row.spacing = 10
         let holder = UIView()
         holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        holder.heightAnchor.constraint(equalToConstant: 34).isActive = true
         // 너비는 화면에 붙인 뒤에 건다 (먼저 걸면 키보드가 종료된다)
         suggestStack.addArrangedSubview(holder)
         holder.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor).isActive = true
@@ -1970,7 +1972,7 @@ final class KeyboardViewController: UIInputViewController {
         for (pos, index) in [left, center, right].enumerated() {
             let slot = UIView()
             slot.translatesAutoresizingMaskIntoConstraints = false
-            slot.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            slot.heightAnchor.constraint(equalToConstant: 34).isActive = true
             // 칸 너비는 추천 영역의 1/3. 화면에 붙인 뒤에 걸어야 한다 (먼저 걸면 키보드가 종료된다)
             suggestStack.addArrangedSubview(slot)
             slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0,
