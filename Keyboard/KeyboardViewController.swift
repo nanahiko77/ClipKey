@@ -283,11 +283,14 @@ final class KeyboardViewController: UIInputViewController {
         // 자판 영역 최대 높이 (100% 일 때): 세로 252, 가로 164
         let keys = (isLandscape ? 164 : 252) * p
         viewHeight?.constant = (KeyboardViewController.suggestBarFull + t + keys).rounded() - topLift
+        // 단어 추가·검색 중에는 입력 칸이 넉넉하게 추천 줄을 높이고, 그만큼 도구 줄(취소와 안내만 있다)을 낮춘다
+        let extra: CGFloat = adding && showBar ? 12 : 0
+        suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull + extra : 0
         // 추천 줄이 없는 화면은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
         toolbar.layoutMargins.top = showBar ? 2 : (isLandscape ? 6 : 10)
         // 상단바를 낮추면 아래 여백부터 줄인다 (46 → 8, 40 이하 → 2)
         toolbar.layoutMargins.bottom = isLandscape ? 2 : max(2, min(8, t - 38))
-        toolbarHeight?.constant = showBar ? t : t + 8
+        toolbarHeight?.constant = showBar ? max(28, t - extra) : t + 8
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
@@ -317,7 +320,8 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 띠를 쓸 수 있으면 내용 전체를 그만큼 올리고, 높이는 그만큼 줄인다 (키 크기는 그대로)
     func updateTopLift() {
-        let room = (roomAbove() * 2).rounded() / 2
+        // 실험 결과 iOS 가 띠를 내주지 않았고, 키보드가 처음 뜰 때 잠깐 잘못 재서 위가 잘리는 일이 있어 끈다
+        let room: CGFloat = 0
         if abs(room - topLift) > 0.5 {
             topLift = room
             suggestTop?.constant = -topLift
@@ -335,6 +339,16 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateTopLift()
+        recheckTheme()
+    }
+
+    /// 앱을 다시 열 때 잠깐 다른 화면 모드로 읽히는 일이 있어서, 배치가 바뀔 때마다 다시 보고 다르면 고친다
+    func recheckTheme() {
+        let was = isDark
+        resolveTheme()
+        if was != isDark {
+            DispatchQueue.main.async { [weak self] in self?.rebuild() }
+        }
     }
 
     func toolbarHeightConstraint() -> NSLayoutConstraint {
@@ -463,9 +477,11 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // 창에 붙은 뒤에야 창의 화면 모드를 읽을 수 있다. 다르면 다시 그린다.
-        let was = isDark
-        resolveTheme()
-        if was != isDark { rebuild() }
+        recheckTheme()
+        // 앱이 막 열릴 때는 화면 모드가 늦게 정해지기도 해서 조금 뒤에 한 번 더 본다
+        for delay in [0.3, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.recheckTheme() }
+        }
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -554,7 +570,6 @@ final class KeyboardViewController: UIInputViewController {
         let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
         suggestBar.isHidden = !showBar
         // 가로 화면은 세로 공간이 좁아서 전체를 낮춘다 (세로 336 → 가로 236)
-        suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
         rebuildHeights()
         barOverlay.subviews.forEach { $0.removeFromSuperview() }
         barOverlay.isHidden = true

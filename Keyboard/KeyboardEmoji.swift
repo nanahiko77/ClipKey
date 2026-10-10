@@ -514,7 +514,7 @@ extension KeyboardViewController {
         box.setContentHuggingPriority(.defaultLow, for: .horizontal)
         box.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let field = UILabel()
-        field.font = .systemFont(ofSize: 16)
+        field.font = .systemFont(ofSize: 17)
         field.textColor = theme.text
         field.lineBreakMode = .byTruncatingHead
         pinEdges(field, in: box, insets: UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10))
@@ -560,7 +560,7 @@ extension KeyboardViewController {
         row.axis = .horizontal
         row.spacing = 6
         // 위쪽은 iOS 키보드 판의 둥근 모서리와 붙지 않게 띄운다
-        pinEdges(row, in: barOverlay, insets: UIEdgeInsets(top: 8, left: 8, bottom: 0, right: 8))
+        pinEdges(row, in: barOverlay, insets: UIEdgeInsets(top: 4, left: 8, bottom: 2, right: 8))
     }
 }
 
