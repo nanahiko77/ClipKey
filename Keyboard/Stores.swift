@@ -196,8 +196,8 @@ final class Settings {
 
     /// 상단바에 넣을 수 있는 모든 도구. 화살표와 되돌리기는 2칸.
     static let toolbarAllItems = ["clipboard", "emoji", "settings", "addword", "hide", "stage", "arrows", "undo"]
-    /// 상단바 도구 칸 수. 맨 앞의 [한/EN] [▦] 두 버튼은 따로 고정이라 7칸.
-    static let toolbarCapacity = 7
+    /// 상단바 도구 칸 수. 맨 앞의 [한/EN] [▦] 두 버튼은 따로 고정이고, 그 뒤 8칸.
+    static let toolbarCapacity = 8
     static func toolbarSlots(_ item: String) -> Int { item == "arrows" || item == "undo" ? 2 : 1 }
     /// 비어 있는 한 칸
     static let toolbarGap = "gap"

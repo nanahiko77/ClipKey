@@ -309,7 +309,7 @@ final class ToolbarEditor: UIView {
         grid.widthAnchor.constraint(equalToConstant: 28).isActive = true
         grid.heightAnchor.constraint(equalToConstant: 28).isActive = true
         barStack.addArrangedSubview(grid)
-        // [한][▦] 다음 7칸: 상단바처럼 끝까지 채운다. 2칸 도구는 두 칸 폭.
+        // [한][▦] 다음 8칸: 상단바처럼 끝까지 채운다. 2칸 도구는 두 칸 폭.
         let slots = UIStackView()
         slots.axis = .horizontal
         slots.alignment = .center
