@@ -113,6 +113,21 @@ final class Settings {
         get { min(max(d.double(forKey: "longPressTime"), Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound) }
         set { d.set(min(max(newValue, Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound), forKey: "longPressTime") }
     }
+    /// 나랏글 줄바꿈 키를 한 줄 위(123 .,?! 자리)로
+    var naraReturnUp: Bool {
+        get { d.bool(forKey: "naraReturnUp") }
+        set { d.set(newValue, forKey: "naraReturnUp") }
+    }
+    /// 클립보드·설정 화면에서 키보드를 더 높이는 만큼 (pt)
+    static let panelExtraRange = 0...150
+    var panelExtra: Int {
+        get {
+            let v = d.object(forKey: "panelExtra") as? Int ?? 60
+            return min(max(v, Settings.panelExtraRange.lowerBound), Settings.panelExtraRange.upperBound)
+        }
+        set { d.set(min(max(newValue, Settings.panelExtraRange.lowerBound), Settings.panelExtraRange.upperBound), forKey: "panelExtra") }
+    }
+
     /// 자판 키 높이 (최대 높이의 몇 %). 100 이 지금 높이.
     static let keyHeightRange = 60...100
     var keyHeightPercent: Int {

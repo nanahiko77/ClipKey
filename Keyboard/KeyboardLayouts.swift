@@ -657,13 +657,16 @@ extension KeyboardViewController {
         let num = rounded(numKey("123"))
         num.guardInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 0)
         let punctAndNum = hstack([num, rounded(makeKey(settings.punctQuestionFirst ? "?!.," : ".,?!", id: "punct", fn: true, font: 15))], spacing: 5)
-        let row3 = row([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9")], punctAndNum)
+
         // 맨 아래 줄은 손가락이 위로 닿기 쉬워서, 키 위쪽 5pt 까지 이 줄의 키로 받는다
         let bottom = [rounded(makeKey("획추가", id: "stroke", font: 17)), jamo("ㅡ", "ㅡ", "0"),
                       rounded(makeKey("쌍자음", id: "double", font: 17))]
         let ret = rounded(returnKey())
-        for k in bottom + [ret] { k.reachUp = 5 }
-        let row4 = row(bottom, ret)
+        // 설정에 따라 줄바꿈 키를 한 줄 위(123 .,?! 자리)와 바꾼다
+        let returnUp = settings.naraReturnUp
+        for k in bottom + (returnUp ? [] : [ret]) { k.reachUp = 5 }
+        let row3 = row([jamo("ㅅ", "ㅅ", "7"), jamo("ㅇ", "ㅇ", "8"), jamo("ㅣ", "ㅣ", "9")], returnUp ? ret : punctAndNum)
+        let row4 = row(bottom, returnUp ? punctAndNum : ret)
         fillRows([row1, row2, row3, row4], spacing: 9, insets: UIEdgeInsets(top: 6, left: 6, bottom: 2, right: 6))
     }
 

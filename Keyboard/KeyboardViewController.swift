@@ -284,7 +284,13 @@ final class KeyboardViewController: UIInputViewController {
         let t = CGFloat(settings.toolbarHeightValue) - (isLandscape ? 6 : 0)
         // 자판 영역 최대 높이 (100% 일 때): 세로 252, 가로 164
         let keys = (isLandscape ? 164 : 252) * p
-        viewHeight?.constant = (KeyboardViewController.suggestBarFull + t + keys).rounded() - topLift
+        // 클립보드·설정(과 그 안의 단어 관리, 상단바 꾸미기)은 목록이 길어서 설정한 만큼 더 높게
+        let tall = panel == .clipboard || panel == .settings || panel == .words || panel == .toolbarEdit
+        let more = tall ? CGFloat(settings.panelExtra) * (isLandscape ? 0.4 : 1) : 0
+        viewHeight?.constant = (KeyboardViewController.suggestBarFull + t + keys + more).rounded() - topLift
+        // 추천 줄이 없는 화면(클립보드·설정 …)은 버튼이 가장자리에 붙지 않게 좌우를 더 띄운다
+        toolbar.layoutMargins.left = showBar ? 6 : 12
+        toolbar.layoutMargins.right = showBar ? 6 : 12
         // 단어 추가·검색 중에는 입력 칸이 넉넉하게 추천 줄을 높이고, 그만큼 도구 줄(취소와 안내만 있다)을 낮춘다
         let extra: CGFloat = adding && showBar ? 12 : 0
         suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull + extra : 0
@@ -614,7 +620,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func layoutSignature() -> String {
-        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(isLandscape)"
+        "\(isDark)|\(panel)|\(lang)|\(adding)|\(symbolPage)|\(settings.hangulLayout)|\(settings.naraHints)|\(settings.toolbarLayout.joined(separator: ","))|\(fieldSignature)|\(emojiTab)|\(emojiCategory)|\(stickerPack)|\(settings.keyFontSize)|\(settings.punctQuestionFirst)|\(settings.naraReturnUp)|\(isLandscape)"
     }
 
     /// 키를 누를 때의 진동과 소리. 둘 다 이 키보드의 설정을 따른다.

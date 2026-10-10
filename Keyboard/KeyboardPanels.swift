@@ -497,11 +497,15 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 settingRow("보조키 표시 (꾹 눌러 숫자·기호)", toggle(settings.naraHints, tag: 10)),
                 settingRow("키 글자 크기", segment(["작게", "보통", "크게"], selected: settings.keyFontSize, tag: 5)),
                 settingRow("나랏글 문장부호 키", segment([". , ? !", "? ! . ,"], selected: settings.punctQuestionFirst ? 1 : 0, tag: 6)),
+                settingRow("나랏글 줄바꿈 키 위치", segment(["맨 아래", "한 줄 위"], selected: settings.naraReturnUp ? 1 : 0, tag: 7)),
                 settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
                 settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
                 padded(sliderRow("키 높이", note: "100%가 지금 높이 · 낮추면 키보드가 화면을 덜 가려요",
                                  min: Float(Settings.keyHeightRange.lowerBound), max: Float(Settings.keyHeightRange.upperBound),
                                  value: Float(settings.keyHeightPercent), low: "낮게", high: "높게", tag: 3)),
+                padded(sliderRow("클립보드·설정 높이", note: "이 두 화면만 키보드를 더 높여 목록을 넓게 · 0이면 같은 높이",
+                                 min: Float(Settings.panelExtraRange.lowerBound), max: Float(Settings.panelExtraRange.upperBound),
+                                 value: Float(settings.panelExtra), low: "같게", high: "높게", tag: 8)),
                 padded(sliderRow("상단바 높이", note: "46이 지금 높이 · 도구 줄만 낮아져요",
                                  min: Float(Settings.toolbarHeightRange.lowerBound), max: Float(Settings.toolbarHeightRange.upperBound),
                                  value: Float(settings.toolbarHeightValue), low: "낮게", high: "높게", tag: 4)),
@@ -556,6 +560,8 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settings.keyFontSize = s.selectedSegmentIndex
         case 6:
             settings.punctQuestionFirst = s.selectedSegmentIndex == 1
+        case 7:
+            settings.naraReturnUp = s.selectedSegmentIndex == 1
         case 3:
             settings.doubleSpace = s.selectedSegmentIndex
         case 4:
@@ -859,6 +865,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 1: return "\(Int(value.rounded()))"
         case 3: return "\(Int(value.rounded()))%"
         case 4: return "\(Int(value.rounded()))"
+        case 8: return "+\(Int(value.rounded()))"
         default: return String(format: "%.2f초", Double(value))
         }
     }
@@ -872,6 +879,12 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             if settings.keyHeightPercent != Int(s.value) {
                 settings.keyHeightPercent = Int(s.value)
                 rebuildHeights()                              // 바로 높이를 바꿔 보여 준다
+            }
+        } else if s.tag == 8 {
+            s.value = (s.value / 10).rounded() * 10           // 10 단위
+            if settings.panelExtra != Int(s.value) {
+                settings.panelExtra = Int(s.value)
+                rebuildHeights()                              // 설정 화면도 이 높이를 쓰므로 바로 보인다
             }
         } else if s.tag == 4 {
             s.value = s.value.rounded()
