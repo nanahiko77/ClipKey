@@ -274,9 +274,20 @@ final class KeyboardViewController: UIInputViewController {
         rebuild()
     }
 
+    /// 키보드 높이 = 추천 줄 + 상단바 + 자판. 상단바 높이와 키 높이(%)는 설정에서 고른다.
+    /// 추천 줄이 없는 화면(클립보드, 설정 …)은 전체 높이는 같고 상단바를 조금 더 띄운다.
     func rebuildHeights() {
-        // 추천 줄을 38 → 28 로 낮춘 만큼 전체도 낮춘다 (키 크기는 그대로)
-        viewHeight?.constant = (isLandscape ? 232 : 326) - topLift
+        let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
+        let p = CGFloat(settings.keyHeightPercent) / 100
+        let t = CGFloat(settings.toolbarHeightValue) - (isLandscape ? 6 : 0)
+        // 자판 영역 최대 높이 (100% 일 때): 세로 252, 가로 164
+        let keys = (isLandscape ? 164 : 252) * p
+        viewHeight?.constant = (KeyboardViewController.suggestBarFull + t + keys).rounded() - topLift
+        // 추천 줄이 없는 화면은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
+        toolbar.layoutMargins.top = showBar ? 2 : (isLandscape ? 6 : 10)
+        // 상단바를 낮추면 아래 여백부터 줄인다 (46 → 8, 40 이하 → 2)
+        toolbar.layoutMargins.bottom = isLandscape ? 2 : max(2, min(8, t - 38))
+        toolbarHeight?.constant = showBar ? t : t + 8
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
@@ -543,12 +554,8 @@ final class KeyboardViewController: UIInputViewController {
         let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
         suggestBar.isHidden = !showBar
         // 가로 화면은 세로 공간이 좁아서 전체를 낮춘다 (세로 336 → 가로 236)
-        rebuildHeights()
         suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
-        // 추천 줄이 없는 화면(클립보드, 설정 …)은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
-        toolbar.layoutMargins.top = showBar ? 2 : (isLandscape ? 6 : 10)
-        toolbar.layoutMargins.bottom = isLandscape ? 2 : 8
-        toolbarHeight?.constant = isLandscape ? (showBar ? 40 : 44) : (showBar ? 46 : 54)
+        rebuildHeights()
         barOverlay.subviews.forEach { $0.removeFromSuperview() }
         barOverlay.isHidden = true
         suggestScroll.isHidden = false

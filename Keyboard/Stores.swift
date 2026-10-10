@@ -113,6 +113,25 @@ final class Settings {
         get { min(max(d.double(forKey: "longPressTime"), Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound) }
         set { d.set(min(max(newValue, Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound), forKey: "longPressTime") }
     }
+    /// 자판 키 높이 (최대 높이의 몇 %). 100 이 지금 높이.
+    static let keyHeightRange = 60...100
+    var keyHeightPercent: Int {
+        get {
+            let v = d.object(forKey: "keyHeightPercent") as? Int ?? 100
+            return min(max(v, Settings.keyHeightRange.lowerBound), Settings.keyHeightRange.upperBound)
+        }
+        set { d.set(min(max(newValue, Settings.keyHeightRange.lowerBound), Settings.keyHeightRange.upperBound), forKey: "keyHeightPercent") }
+    }
+    /// 상단바 높이 (pt). 46 이 지금 높이.
+    static let toolbarHeightRange = 34...46
+    var toolbarHeightValue: Int {
+        get {
+            let v = d.object(forKey: "toolbarHeightValue") as? Int ?? 46
+            return min(max(v, Settings.toolbarHeightRange.lowerBound), Settings.toolbarHeightRange.upperBound)
+        }
+        set { d.set(min(max(newValue, Settings.toolbarHeightRange.lowerBound), Settings.toolbarHeightRange.upperBound), forKey: "toolbarHeightValue") }
+    }
+
     /// 전체 삭제 같은 큰 말풍선: 반복 삭제가 먼저 시작되도록 길게 누르기 + 0.3초, 최소 0.6초
     var altDelay: Double { max(0.6, longPressTime + 0.3) }
 

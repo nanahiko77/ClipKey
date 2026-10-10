@@ -499,6 +499,12 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 settingRow("나랏글 문장부호 키", segment([". , ? !", "? ! . ,"], selected: settings.punctQuestionFirst ? 1 : 0, tag: 6)),
                 settingRow("영문 문장 첫 글자 대문자", toggle(settings.autoCap, tag: 12)),
                 settingRow("간격 두 번 누르면", segment(["끄기", "마침표 .", "쉼표 ,"], selected: settings.doubleSpace, tag: 3)),
+                padded(sliderRow("키 높이", note: "100%가 지금 높이 · 낮추면 키보드가 화면을 덜 가려요",
+                                 min: Float(Settings.keyHeightRange.lowerBound), max: Float(Settings.keyHeightRange.upperBound),
+                                 value: Float(settings.keyHeightPercent), low: "낮게", high: "높게", tag: 3)),
+                padded(sliderRow("상단바 높이", note: "46이 지금 높이 · 도구 줄만 낮아져요",
+                                 min: Float(Settings.toolbarHeightRange.lowerBound), max: Float(Settings.toolbarHeightRange.upperBound),
+                                 value: Float(settings.toolbarHeightValue), low: "낮게", high: "높게", tag: 4)),
             ], nil),
             ("입력", [
                 settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
@@ -818,13 +824,30 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     func sliderText(_ tag: Int, _ value: Float) -> String {
-        tag == 1 ? "\(Int(value.rounded()))" : String(format: "%.2f초", Double(value))
+        switch tag {
+        case 1: return "\(Int(value.rounded()))"
+        case 3: return "\(Int(value.rounded()))%"
+        case 4: return "\(Int(value.rounded()))"
+        default: return String(format: "%.2f초", Double(value))
+        }
     }
 
     @objc func sliderChanged(_ s: UISlider) {
         if s.tag == 1 {
             s.value = s.value.rounded()                       // 0~9 한 칸씩
             settings.repeatSpeed = Int(s.value)
+        } else if s.tag == 3 {
+            s.value = s.value.rounded()
+            if settings.keyHeightPercent != Int(s.value) {
+                settings.keyHeightPercent = Int(s.value)
+                rebuildHeights()                              // 바로 높이를 바꿔 보여 준다
+            }
+        } else if s.tag == 4 {
+            s.value = s.value.rounded()
+            if settings.toolbarHeightValue != Int(s.value) {
+                settings.toolbarHeightValue = Int(s.value)
+                rebuildHeights()
+            }
         } else {
             s.value = (s.value / 0.05).rounded() * 0.05       // 0.05초 단위
             settings.longPressTime = Double(s.value)

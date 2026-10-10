@@ -21,7 +21,11 @@ extension KeyboardViewController {
         b.setTitleColor(fg, for: .normal)
         b.backgroundColor = active ? theme.accent : (plain ? UIColor.clear : theme.funcKey)
         b.layer.cornerRadius = 8
-        b.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        // 상단바를 낮추면 버튼도 같이 줄어들게 (꼭 36 이 아니어도 된다)
+        let h = b.heightAnchor.constraint(equalToConstant: 36)
+        h.priority = .defaultHigh
+        h.isActive = true
+        b.heightAnchor.constraint(lessThanOrEqualToConstant: 36).isActive = true
         if let width = width {
             b.widthAnchor.constraint(equalToConstant: width).isActive = true
         } else {
