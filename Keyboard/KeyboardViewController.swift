@@ -342,6 +342,15 @@ final class KeyboardViewController: UIInputViewController {
         recheckTheme()
     }
 
+    func nudgeHeight() {
+        guard let h = viewHeight else { return }
+        h.constant += 1
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        rebuildHeights()
+        view.setNeedsLayout()
+    }
+
     /// 앱을 다시 열 때 잠깐 다른 화면 모드로 읽히는 일이 있어서, 배치가 바뀔 때마다 다시 보고 다르면 고친다
     func recheckTheme() {
         let was = isDark
@@ -478,6 +487,9 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidAppear(animated)
         // 창에 붙은 뒤에야 창의 화면 모드를 읽을 수 있다. 다르면 다시 그린다.
         recheckTheme()
+        // 키보드가 닫힌 상태에서 처음 뜰 때 iOS 가 예전 높이로 잘라 두는 일이 있어서(위가 잘림),
+        // 높이를 살짝 바꿨다 되돌려 다시 재게 한다
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.nudgeHeight() }
         // 앱이 막 열릴 때는 화면 모드가 늦게 정해지기도 해서 조금 뒤에 한 번 더 본다
         for delay in [0.3, 1.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.recheckTheme() }
@@ -542,8 +554,16 @@ final class KeyboardViewController: UIInputViewController {
         // 키보드 창의 화면 모드를 본다 (기본 키보드도 이것을 따른다).
         // UIScreen.main 은 키보드 안에서 엉뚱한 값을 줄 때가 있고, 우리 view 는 모드를 덮어써 두었으므로
         // 덮어쓰지 않은 창(window) → 윗 뷰 → 이 화면 컨트롤러 순으로 읽는다.
+        // 앱이 입력 칸에 밝은/어두운 키보드를 직접 정해 주면(keyboardAppearance) 그것을 먼저 따른다.
+        // Claude 앱처럼 앱 안의 테마가 아이폰 화면 모드와 다를 때 기본 키보드도 이 값을 따른다.
+        // 정해 주지 않으면(.default) 키보드 창의 화면 모드를 본다.
         let source = view.window?.traitCollection ?? view.superview?.traitCollection ?? traitCollection
-        let systemDark = source.userInterfaceStyle == .dark
+        let systemDark: Bool
+        switch textDocumentProxy.keyboardAppearance {
+        case .dark: systemDark = true
+        case .light: systemDark = false
+        default: systemDark = source.userInterfaceStyle == .dark
+        }
         switch settings.themeMode {
         case 1: isDark = false
         case 2: isDark = true
