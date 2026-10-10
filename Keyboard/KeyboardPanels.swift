@@ -290,7 +290,9 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
 
         let close = toolButton("닫기", action: #selector(closePreview))
         let paste = toolButton(pasteTitle, active: true, action: #selector(pastePreview))
-        var row: [UIView] = [close]
+        // 크게 보기에서도 바로 지울 수 있게 (고정한 항목은 한 번 더 눌러야 지운다)
+        let delete = toolButton("삭제", symbol: "trash", color: theme.danger, action: #selector(deletePreview(_:)))
+        var row: [UIView] = [close, delete]
         if clip.image != nil {
             // 사진은 스티커 팩에 넣을 수 있다
             row.append(toolButton("스티커로", symbol: "smile", action: #selector(previewToSticker)))
@@ -315,6 +317,13 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         guard let clip = previewClip else { return }
         closePreview()
         showStickerPicker(preselect: clip.id)
+    }
+
+    @objc func deletePreview(_ sender: UIButton) {
+        guard let clip = previewClip else { return }
+        if clip.pinned, !confirmed(sender, title: "한 번 더 누르면 삭제") { return }
+        closePreview()
+        deleteClip(clip)
     }
 
     @objc func pastePreview() {

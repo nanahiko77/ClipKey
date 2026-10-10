@@ -358,7 +358,7 @@ extension KeyboardViewController {
         showToast("복사했어요 · 입력 칸을 꾹 눌러 붙여넣으세요")
     }
 
-    /// 스티커 크게 보기: [닫기] [복사]
+    /// 스티커 크게 보기: [닫기] [빼기] [복사]
     func showStickerPreview(_ name: String) {
         pickerView?.removeFromSuperview()
         guard let img = UIImage(contentsOfFile: stickers.fileURL(name).path) else { return }
@@ -374,10 +374,17 @@ extension KeyboardViewController {
         let close = toolButton("닫기", action: #selector(closeStickerPicker))
         let copy = toolButton("복사", active: true, action: #selector(copyPreviewSticker))
         previewSticker = name
-        let stack = UIStackView(arrangedSubviews: [imageView, hstack([close, copy], spacing: 6)])
+        let delete = toolButton("빼기", symbol: "trash", color: theme.danger, action: #selector(deletePreviewSticker))
+        let stack = UIStackView(arrangedSubviews: [imageView, hstack([close, delete, copy], spacing: 6)])
         stack.axis = .vertical
         stack.spacing = 6
         pinEdges(stack, in: cover, insets: UIEdgeInsets(top: 6, left: 6, bottom: 6, right: 6))
+    }
+
+    @objc func deletePreviewSticker() {
+        guard let name = previewSticker else { return }
+        closeStickerPicker()
+        removeSticker(name)                 // 아래 알림 줄에서 되돌릴 수 있다
     }
 
     @objc func copyPreviewSticker() {
