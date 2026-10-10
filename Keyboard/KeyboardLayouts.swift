@@ -49,6 +49,14 @@ extension KeyboardViewController {
         return max(30, min(40, floor(free / CGFloat(Settings.toolbarCapacity))))
     }
 
+    /// 상단바에서 남는 폭을 채우는 빈 곳
+    func toolbarSpacer() -> UIView {
+        let v = UIView()
+        v.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return v
+    }
+
     func toolbarTitle(_ text: String) -> UILabel {
         let l = UILabel()
         l.text = "  " + text
@@ -157,7 +165,7 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
             toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, active: true,
                                                   label: "클립보드 닫기", action: #selector(backToKeys)))
-            toolbar.addArrangedSubview(toolbarTitle("클립보드"))
+            toolbar.addArrangedSubview(toolbarSpacer())   // 제목 없이 빈 곳 (다른 화면과 맞춘다)
             toolbar.addArrangedSubview(toolButton(symbol: "search", width: 40, plain: true,
                                                   label: "클립보드 검색", action: #selector(startClipSearch)))
             let clear = toolButton("전체 삭제", plain: true, color: theme.danger, action: #selector(clearClipsTapped(_:)))
@@ -170,7 +178,7 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
             toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
                                                   label: "클립보드 열기", action: #selector(clipTapped)))
-            toolbar.addArrangedSubview(toolbarTitle("설정"))
+            toolbar.addArrangedSubview(toolbarSpacer())
             toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, active: true,
                                                   label: "설정 닫기", action: #selector(clipTapped)))
         case .toolbarEdit:
