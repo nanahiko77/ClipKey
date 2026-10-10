@@ -163,7 +163,7 @@ final class ToolbarEditor: UIView {
 
         content.addArrangedSubview(meterRow())
         content.addArrangedSubview(inset(barCard))
-        content.addArrangedSubview(caption("⊖ 로 빼면 그 칸은 비워져요 · 빈칸을 남길지는 마음대로", size: 12, top: 6, bottom: 0))
+        content.addArrangedSubview(caption("아이콘을 누르면 빠지고 그 칸은 빈칸이 돼요 · 꾹 눌러 끌면 자리 바꾸기", size: 12, top: 6, bottom: 0))
         content.addArrangedSubview(caption("모든 도구 · 누르거나 위로 끌어 올리면 넣기", size: 13, top: 16, bottom: 6))
         content.addArrangedSubview(inset(gridCard))
     }
@@ -221,7 +221,7 @@ final class ToolbarEditor: UIView {
             minus.centerYAnchor.constraint(equalTo: v.topAnchor, constant: 3),
         ])
         v.item = item
-        v.accessibilityLabel = (ToolbarEditor.names[item] ?? item) + " · 빼려면 오른쪽 위 빼기"
+        v.accessibilityLabel = (ToolbarEditor.names[item] ?? item) + " · 누르면 빼기"
         let tap = UITapGestureRecognizer(target: self, action: #selector(barItemTapped(_:)))
         let press = UILongPressGestureRecognizer(target: self, action: #selector(dragged(_:)))
         press.minimumPressDuration = 0.25
@@ -411,18 +411,12 @@ final class ToolbarEditor: UIView {
     }
 
     @objc private func barItemTapped(_ g: UITapGestureRecognizer) {
+        // 미리 보기의 아이콘을 누르면 바로 빠진다 (그 칸은 빈칸이 된다)
         guard let v = g.view as? EditorItemView else { return }
-        // ⊖ 근처(오른쪽 위)를 누르면 뺀다. 가운데를 누르면 살짝 흔들어 끌 수 있다고 알려 준다.
-        let p = g.location(in: v)
-        if p.x > v.bounds.width - 22 && p.y < v.bounds.height * 0.6 {
-            remove(v.item)
-        } else {
-            let a = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-            a.values = [0, 0.08, -0.08, 0.05, 0]
-            a.duration = 0.3
-            v.layer.add(a, forKey: "wiggle")
-        }
+        set(v.item)
     }
+
+    private func set(_ item: String) { remove(item) }
 
     @objc private func tileTapped(_ g: UITapGestureRecognizer) {
         guard let v = g.view as? EditorItemView else { return }
