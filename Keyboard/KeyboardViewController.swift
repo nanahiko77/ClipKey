@@ -297,8 +297,8 @@ final class KeyboardViewController: UIInputViewController {
         let t = CGFloat(settings.toolbarHeightValue) - (isLandscape ? 6 : 0)
         // 자판 영역 최대 높이 (100% 일 때): 세로 252, 가로 164
         let keys = (isLandscape ? 164 : 252) * p
-        // 클립보드·설정(과 그 안의 단어 관리, 상단바 꾸미기)은 목록이 길어서 설정한 만큼 더 높게
-        let tall = panel == .clipboard || panel == .settings || panel == .words || panel == .toolbarEdit
+        // 클립보드·설정·이모지(와 단어 관리, 상단바 꾸미기)는 목록이 길어서 설정한 만큼 더 높게
+        let tall = panel == .clipboard || panel == .settings || panel == .words || panel == .toolbarEdit || panel == .emoji
         let more = tall ? CGFloat(settings.panelExtra) * (isLandscape ? 0.4 : 1) : 0
         let stage: CGFloat = stagingWanted && !adding ? KeyboardViewController.stageBarFull : 0
         stageBarHeight?.constant = stage

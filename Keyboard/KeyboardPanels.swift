@@ -512,7 +512,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 padded(sliderRow("키 높이", note: "100%가 지금 높이 · 낮추면 키보드가 화면을 덜 가려요",
                                  min: Float(Settings.keyHeightRange.lowerBound), max: Float(Settings.keyHeightRange.upperBound),
                                  value: Float(settings.keyHeightPercent), low: "낮게", high: "높게", tag: 3)),
-                padded(sliderRow("클립보드·설정 높이", note: "이 두 화면만 키보드를 더 높여 목록을 넓게 · 0이면 같은 높이",
+                padded(sliderRow("클립보드·설정·이모지 높이", note: "이 세 화면만 키보드를 더 높여 목록을 넓게 · 0이면 같은 높이",
                                  min: Float(Settings.panelExtraRange.lowerBound), max: Float(Settings.panelExtraRange.upperBound),
                                  value: Float(settings.panelExtra), low: "같게", high: "높게", tag: 8)),
                 padded(sliderRow("상단바 높이", note: "46이 지금 높이 · 도구 줄만 낮아져요",
