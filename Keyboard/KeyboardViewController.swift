@@ -59,6 +59,11 @@ final class KeyboardViewController: UIInputViewController {
     var previewSticker: String?
     var toolbarHeight: NSLayoutConstraint?
     var viewHeight: NSLayoutConstraint?
+    /// iOS 26 이 다른 회사 키보드 위에 두는 띠(약 17pt)로 올려 그린 만큼. 0 이면 띠를 못 쓰는 것.
+    var topLift: CGFloat = 0
+    var suggestTop: NSLayoutConstraint?
+    /// 띠 자리에 깔아 키보드 판처럼 보이게 하는 바탕 (둥근 윗모서리)
+    let bandView = UIView()
     var isLandscape = false
     /// 추천 줄 자리에 대신 올리는 것 (단어 추가 입력 칸, 이모지 패널 탭)
     let barOverlay = UIView()
@@ -180,8 +185,22 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: - 생명주기
 
+    /// 바탕 view 를 위쪽 띠까지 눌리게 넓힌 것으로 바꾼다
+    override func loadView() {
+        let v = RootInputView(frame: .zero, inputViewStyle: .default)
+        v.owner = self
+        view = v
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.clipsToBounds = false
+        bandView.isUserInteractionEnabled = false
+        bandView.layer.cornerRadius = 26
+        bandView.layer.cornerCurve = .continuous
+        bandView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        bandView.isHidden = true
+        view.addSubview(bandView)
 
         // 추천 줄(38) + 도구 줄(46) + 자판. 자판 키 높이는 아이폰 기본 키보드와 비슷하게 (아래는 아이폰의 지구본 줄이 붙는다)
         let height = view.heightAnchor.constraint(equalToConstant: 336)
@@ -223,7 +242,7 @@ final class KeyboardViewController: UIInputViewController {
         let barHeight = suggestBar.heightAnchor.constraint(equalToConstant: KeyboardViewController.suggestBarFull)
         suggestBarHeight = barHeight
         NSLayoutConstraint.activate([
-            suggestBar.topAnchor.constraint(equalTo: view.topAnchor),
+            suggestTopConstraint(),
             suggestBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             suggestBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             barHeight,
@@ -251,6 +270,57 @@ final class KeyboardViewController: UIInputViewController {
         loadTextReplacements()
         _ = checkField()
         rebuild()
+    }
+
+    func rebuildHeights() {
+        viewHeight?.constant = (isLandscape ? 236 : 336) - topLift
+    }
+
+    func suggestTopConstraint() -> NSLayoutConstraint {
+        let c = suggestBar.topAnchor.constraint(equalTo: view.topAnchor)
+        suggestTop = c
+        return c
+    }
+
+    // MARK: 위쪽 띠
+
+    /// 우리 view 위로 그려도 되고 눌러도 들어오는 높이: 모든 윗 뷰(창 포함)가 그만큼 위까지 덮고 있어야 한다.
+    /// 띠가 다른 창(시스템)에 있으면 0 이 되어 아무것도 바꾸지 않는다.
+    func roomAbove() -> CGFloat {
+        guard let window = view.window else { return 0 }
+        let myTop = view.convert(CGPoint.zero, to: window).y
+        var room = myTop
+        var cur: UIView? = view.superview
+        while let c = cur {
+            room = min(room, myTop - c.convert(CGPoint.zero, to: window).y)
+            if c.layer.mask != nil { room = min(room, myTop - c.convert(CGPoint.zero, to: window).y) }
+            cur = c.superview
+        }
+        return max(0, min(KeyboardViewController.bandHeight, room))
+    }
+
+    static let bandHeight: CGFloat = 17
+
+    /// 띠를 쓸 수 있으면 내용 전체를 그만큼 올리고, 높이는 그만큼 줄인다 (키 크기는 그대로)
+    func updateTopLift() {
+        let room = (roomAbove() * 2).rounded() / 2
+        if abs(room - topLift) > 0.5 {
+            topLift = room
+            suggestTop?.constant = -topLift
+            rebuildHeights()
+        }
+        bandView.isHidden = topLift == 0
+        bandView.backgroundColor = view.backgroundColor
+        bandView.frame = CGRect(x: 0, y: -topLift, width: view.bounds.width, height: topLift + 30)
+        view.sendSubviewToBack(bandView)
+        // 띠를 못 쓰면 우리 view 는 네모난 윗변 (둥근 모서리를 겹쳐 그리지 않는다)
+        view.layer.cornerRadius = 0
+        (view as? RootInputView)?.extraTop = topLift
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateTopLift()
     }
 
     func toolbarHeightConstraint() -> NSLayoutConstraint {
@@ -462,16 +532,14 @@ final class KeyboardViewController: UIInputViewController {
         // 바탕은 기본 키보드 판과 같은 색으로 채운다. 투명하게 두면 지구본으로 키보드를 바꿀 때
         // 앞 키보드(기본 키보드)의 키가 뒤에 비쳐 겹쳐 보였다. 윗모서리는 키보드 판처럼 둥글게.
         view.backgroundColor = isDark ? Theme.hex(0x212121) : Theme.hex(0xE1E2E7)
-        view.layer.cornerRadius = 26
-        view.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        view.layer.cornerCurve = .continuous
+        bandView.backgroundColor = view.backgroundColor
         divider.backgroundColor = theme.divider.withAlphaComponent(isDark ? 0.6 : 0.45)
         // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
         let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
         suggestBar.isHidden = !showBar
         // 가로 화면은 세로 공간이 좁아서 전체를 낮춘다 (세로 336 → 가로 236)
-        viewHeight?.constant = isLandscape ? 236 : 336
+        rebuildHeights()
         suggestBarHeight?.constant = showBar ? (isLandscape ? 32 : KeyboardViewController.suggestBarFull) : 0
         // 추천 줄이 없는 화면(클립보드, 설정 …)은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
         toolbar.layoutMargins.top = showBar ? 2 : (isLandscape ? 6 : 10)
@@ -2107,5 +2175,18 @@ final class Generation {
         defer { lock.unlock() }
         value += 1
         return value
+    }
+}
+
+
+/// 키보드의 바탕 view. 위쪽 띠로 올려 그린 만큼(extraTop) 위를 눌러도 이 키보드로 들어오게 한다.
+final class RootInputView: UIInputView {
+    weak var owner: KeyboardViewController?
+    var extraTop: CGFloat = 0
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if extraTop > 0 {
+            return bounds.inset(by: UIEdgeInsets(top: -extraTop, left: 0, bottom: 0, right: 0)).contains(point)
+        }
+        return super.point(inside: point, with: event)
     }
 }
