@@ -114,9 +114,10 @@ final class Settings {
         set { d.set(min(max(newValue, Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound), forKey: "longPressTime") }
     }
     /// 입력 영역: 단어를 키보드 안에서 다 친 뒤 앱에 한 번에 보낸다 (사파리 웹 입력창 깜빡임 줄이기)
-    var stagedInput: Bool {
-        get { d.bool(forKey: "stagedInput") }
-        set { d.set(newValue, forKey: "stagedInput") }
+    /// 0 끄기, 1 브라우저에서만(자동), 2 항상
+    var stagedMode: Int {
+        get { min(max(d.object(forKey: "stagedMode") as? Int ?? 1, 0), 2) }
+        set { d.set(min(max(newValue, 0), 2), forKey: "stagedMode") }
     }
 
     /// 나랏글 줄바꿈 키를 한 줄 위(123 .,?! 자리)로

@@ -512,13 +512,13 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             ], nil),
             ("입력", [
                 settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
-                settingRow("입력 영역 사용 (웹 깜빡임 줄이기)", toggle(settings.stagedInput, tag: 20)),
+                settingRow("입력 영역 (웹 깜빡임 줄이기)", segment(["끄기", "브라우저", "항상"], selected: settings.stagedMode, tag: 9)),
                 padded(sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
                                  min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1)),
                 padded(sliderRow("길게 누르기 시간", note: "보조 글자 말풍선과 반복 입력이 시작되는 시간 · 최소 0.3초",
                                  min: Float(Settings.longPressRange.lowerBound), max: Float(Settings.longPressRange.upperBound),
                                  value: Float(settings.longPressTime), low: "짧게", high: "길게", tag: 2)),
-            ], "입력 영역: 치는 단어를 추천 줄 맨 앞 칸에 모았다가 간격·문장부호를 누르거나 잠깐 멈추면 앱에 한 번에 보내요. 사파리 웹 입력창의 커서 깜빡임이 줄어요."),
+            ], "입력 영역: 치는 단어를 추천 줄 맨 앞 칸에 모았다가 간격·문장부호를 누르거나 잠깐 멈추면 앱에 한 번에 보내요. 사파리 웹 입력창의 커서 깜빡임이 줄어요. '브라우저'는 사파리·크롬 등에서만 자동으로 켜요."),
             ("상단바", [
                 navRow("상단바 꾸미기", value: nil, action: #selector(openToolbarEdit)),
                 settingRow("오타 교정 (한글·영문)", segment(["끄기", "추천만", "자동"], selected: settings.correctMode, tag: 4)),
@@ -563,6 +563,10 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             settings.punctQuestionFirst = s.selectedSegmentIndex == 1
         case 7:
             settings.naraReturnUp = s.selectedSegmentIndex == 1
+        case 9:
+            resetComposer()
+            flushStaged()
+            settings.stagedMode = s.selectedSegmentIndex
         case 3:
             settings.doubleSpace = s.selectedSegmentIndex
         case 4:
@@ -585,10 +589,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 15: settings.keySound = s.isOn
         case 16: settings.savePhotos = s.isOn
         case 17: settings.repeatOnHold = s.isOn
-        case 20:
-            resetComposer()
-            flushStaged()
-            settings.stagedInput = s.isOn
+
         case 19:
             settings.fewContextReads = s.isOn
             ctxCache = nil
@@ -692,6 +693,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         let lines = [
             "앱 요청 \(appearance) · 창 \(style(win?.traitCollection)) · 윗뷰 \(style(view.superview?.traitCollection))",
             "컨트롤러 \(style(traitCollection)) · 화면 \(style(UIScreen.main.traitCollection)) · 적용 \(isDark ? "다크" : "라이트")",
+            "앱 \(hostBundleID ?? "알 수 없음") · 입력 영역 \(stagingWanted ? "켜짐" : "꺼짐")",
             "높이 원함 \(Int(viewHeight?.constant ?? 0)) · 실제 \(Int(view.bounds.height)) · 창 안 위치 \(Int(top)) · 창 높이 \(Int(win?.bounds.height ?? 0))",
         ]
         let l = UILabel()

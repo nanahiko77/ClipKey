@@ -474,6 +474,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         clearEditHistory()
+        hostBundleID = readHostBundleID()
         // 클립보드 읽기는 키보드가 화면에 뜬 뒤로 미룬다 (사진을 읽느라 늦게 뜨면 iOS 가 기본 키보드를 띄운다)
         ctxCache = nil
         // 테마나 자판이 그대로면 다시 그리지 않는다 (키보드가 더 빨리 뜬다)
@@ -752,7 +753,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// 조합 중 글자를 marked text 로 다룰지 (단어 추가 칸은 키보드 안의 글자라 해당 없음)
-    var marked: Bool { settings.markedComposing && addBuffer == nil && !settings.stagedInput }
+    var marked: Bool { settings.markedComposing && addBuffer == nil && !stagingWanted }
 
     // MARK: - 입력 영역 (웹 입력창 깜빡임 줄이기)
 
@@ -761,7 +762,44 @@ final class KeyboardViewController: UIInputViewController {
     var staged = ""
     var stagedTimer: Timer?
 
-    var staging: Bool { settings.stagedInput && addBuffer == nil }
+    var staging: Bool { stagingWanted && addBuffer == nil }
+
+    /// 입력 영역을 쓸지: 항상, 또는 브라우저(사파리·크롬 등)에서만
+    var stagingWanted: Bool {
+        switch settings.stagedMode {
+        case 2: return true
+        case 1: return isBrowserHost
+        default: return false
+        }
+    }
+
+    /// 지금 키보드를 띄운 앱의 번들 ID. iOS 가 공식으로 알려 주지 않아서, 숨은 값을 조심스럽게 읽어 본다.
+    /// 읽을 수 없으면 nil (그때는 "브라우저에서만"이 동작하지 않는다).
+    lazy var hostBundleID: String? = readHostBundleID()
+
+    func readHostBundleID() -> String? {
+        let keys = ["_hostBundleID", "_hostApplicationBundleIdentifier"]
+        var vc: UIViewController? = self
+        while let v = vc {
+            for key in keys {
+                let sel = NSSelectorFromString(key)
+                guard v.responds(to: sel) else { continue }
+                if let id = v.perform(sel)?.takeUnretainedValue() as? String, !id.isEmpty, id != "<null>" { return id }
+            }
+            vc = v.parent
+        }
+        return nil
+    }
+
+    static let browserIDs = ["com.apple.mobilesafari", "com.apple.SafariViewService", "com.google.chrome.ios",
+                             "org.mozilla.ios.Firefox", "com.microsoft.msedge", "com.naver.whale",
+                             "com.brave.ios.browser", "com.duckduckgo.mobile.ios", "com.nhncorp.NaverSearch",
+                             "com.daum.daumapp", "com.samsung.internet"]
+
+    var isBrowserHost: Bool {
+        guard let id = hostBundleID else { return false }
+        return KeyboardViewController.browserIDs.contains(id) || id.lowercased().contains("safari")
+    }
 
     /// 모아 둔 글자를 앱에 보낸다
     func flushStaged() {
