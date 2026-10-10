@@ -122,7 +122,9 @@ final class KeyboardViewController: UIInputViewController {
     /// 추천 줄 (B안: 도구 줄 위에 따로 둔다). 글자 자판·숫자 화면에서만 보인다.
     let suggestBar = UIView()
     var suggestBarHeight: NSLayoutConstraint?
-    static let suggestBarFull: CGFloat = 28
+    /// 추천 줄 = 위 여유 6 + 글자 줄 28. 키보드가 닫힌 상태에서 처음 뜰 때 iOS 가 위쪽 띠(17pt) 없이
+    /// 판의 둥근 윗변을 바로 위에 붙이는데, 그때 글자가 윗변에 붙어 잘려 보이지 않게 6 을 띄운다.
+    static let suggestBarFull: CGFloat = 34
     /// 상단바에서 단어 추가를 열었으면 저장·취소 뒤 글자 자판으로 돌아간다
     var addReturnPanel: Panel?
     // 밀어서 연속 입력 중인 키
