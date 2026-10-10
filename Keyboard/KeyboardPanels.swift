@@ -528,7 +528,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
                 settingRow("키 누를 때 진동", toggle(settings.haptic, tag: 11)),
                 settingRow("키 누를 때 소리", toggle(settings.keySound, tag: 15)),
             ], nil),
-            ("정보", [appVersionRow(), dictionaryRow()], nil),
+            ("정보", [appVersionRow(), dictionaryRow(), diagnosticsRow()], nil),
         ])
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -658,6 +658,37 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         row.layoutMargins = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
         row.heightAnchor.constraint(equalToConstant: 52).isActive = true
         return (row, value, caption, button)
+    }
+
+    /// 화면 모드·높이 진단 줄: 문제가 생긴 상태에서 이 줄을 찍어 보내면 원인을 찾을 수 있다
+    func diagnosticsRow() -> UIView {
+        func style(_ t: UITraitCollection?) -> String {
+            guard let t = t else { return "-" }
+            switch t.userInterfaceStyle {
+            case .dark: return "다크"
+            case .light: return "라이트"
+            default: return "?"
+            }
+        }
+        let appearance: String
+        switch textDocumentProxy.keyboardAppearance {
+        case .dark: appearance = "다크"
+        case .light: appearance = "라이트"
+        default: appearance = "기본"
+        }
+        let win = view.window
+        let top = win.map { view.convert(CGPoint.zero, to: $0).y } ?? -1
+        let lines = [
+            "앱 요청 \(appearance) · 창 \(style(win?.traitCollection)) · 윗뷰 \(style(view.superview?.traitCollection))",
+            "컨트롤러 \(style(traitCollection)) · 화면 \(style(UIScreen.main.traitCollection)) · 적용 \(isDark ? "다크" : "라이트")",
+            "높이 원함 \(Int(viewHeight?.constant ?? 0)) · 실제 \(Int(view.bounds.height)) · 창 안 위치 \(Int(top)) · 창 높이 \(Int(win?.bounds.height ?? 0))",
+        ]
+        let l = UILabel()
+        l.numberOfLines = 0
+        l.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        l.textColor = theme.muted
+        l.text = "진단\n" + lines.joined(separator: "\n")
+        return padded(l, 8)
     }
 
     /// 맞춤법 사전 줄
