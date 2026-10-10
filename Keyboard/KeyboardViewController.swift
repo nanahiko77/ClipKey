@@ -1945,7 +1945,12 @@ final class KeyboardViewController: UIInputViewController {
         holder.heightAnchor.constraint(equalToConstant: 28).isActive = true
         // 너비는 화면에 붙인 뒤에 건다 (먼저 걸면 키보드가 종료된다)
         suggestStack.addArrangedSubview(holder)
-        holder.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor).isActive = true
+        // 같은 화면 나무에 붙어 있지 않으면 제약을 걸 때 키보드가 죽는다 (예전에 실제로 났다). 확인하고 건다.
+        if holder.isDescendant(of: suggestScroll) {
+            holder.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor).isActive = true
+        } else {
+            holder.widthAnchor.constraint(equalToConstant: max(suggestScroll.bounds.width, 300)).isActive = true
+        }
         row.translatesAutoresizingMaskIntoConstraints = false
         holder.addSubview(row)
         NSLayoutConstraint.activate([
@@ -2015,8 +2020,12 @@ final class KeyboardViewController: UIInputViewController {
             slot.heightAnchor.constraint(equalToConstant: 28).isActive = true
             // 칸 너비는 추천 영역의 1/3. 화면에 붙인 뒤에 걸어야 한다 (먼저 걸면 키보드가 종료된다)
             suggestStack.addArrangedSubview(slot)
-            slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0,
+            if slot.isDescendant(of: suggestScroll) {
+                slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0,
                                         constant: -reserved / 3).isActive = true
+            } else {
+                slot.widthAnchor.constraint(equalToConstant: max(suggestScroll.bounds.width, 300) / 3 - reserved / 3).isActive = true
+            }
             if let i = index {
                 let b = suggestionButton(items[i], index: i, slot: true, best: highlight && pos == 1)
                 pinEdges(b, in: slot, insets: UIEdgeInsets(top: 3, left: 3, bottom: 3, right: 3))
