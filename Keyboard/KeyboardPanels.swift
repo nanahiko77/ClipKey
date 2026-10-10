@@ -512,6 +512,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
             ], nil),
             ("입력", [
                 settingRow("길게 누르면 반복 입력", toggle(settings.repeatOnHold, tag: 17)),
+                settingRow("커서 옮기면 화면도 따라가기", toggle(settings.followCaret, tag: 21)),
                 settingRow("입력 영역 (웹 깜빡임)", segment(["끄기", "버튼", "자동", "항상"], selected: settings.stagedMode, tag: 9)),
                 padded(sliderRow("반복 입력 속도", note: "누르고 있을 때 반복되는 빠르기 (지우기 키도 같이)",
                                  min: 0, max: 9, value: Float(settings.repeatSpeed), low: "느리게", high: "빠르게", tag: 1)),
@@ -589,6 +590,7 @@ extension KeyboardViewController: UITableViewDataSource, UITableViewDelegate {
         case 15: settings.keySound = s.isOn
         case 16: settings.savePhotos = s.isOn
         case 17: settings.repeatOnHold = s.isOn
+        case 21: settings.followCaret = s.isOn
 
         case 19:
             settings.fewContextReads = s.isOn

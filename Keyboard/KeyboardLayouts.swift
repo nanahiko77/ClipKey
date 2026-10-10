@@ -536,6 +536,7 @@ extension KeyboardViewController {
         k.onCursorEnd = { [weak self] in
             guard let self = self else { return }
             self.cursorDragging = false
+            self.scheduleRevealCaret(after: 0.05)
             UIView.animate(withDuration: 0.15) {
                 for key in self.keyArea.allKeys { key.setBlank(false); key.alpha = 1 }
             }
@@ -673,6 +674,7 @@ extension KeyboardViewController {
     /// 패드로 움직였을 때: 커서 앞뒤 글자를 다시 읽게 하고 추천을 새로 그린다
     func padMoved() {
         ctxCache = nil
+        scheduleRevealCaret()
         if settings.haptic {
             selectionFeedback.selectionChanged()
             selectionFeedback.prepare()

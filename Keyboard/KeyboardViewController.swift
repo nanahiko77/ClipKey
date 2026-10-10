@@ -1953,6 +1953,34 @@ final class KeyboardViewController: UIInputViewController {
         updateUndoButtons()
     }
 
+    // MARK: 커서를 옮긴 뒤 화면 따라가기
+
+    /// 키보드는 커서만 옮길 수 있고 앱 화면을 스크롤하라고 할 수는 없다. 그래서 커서가 화면 밖으로 나가도 그대로였다.
+    /// 커서 자리에 보이지 않는 글자(폭 0)를 넣었다 바로 지우면, 앱이 "글자가 바뀌었다"고 보고 커서가 보이게 스크롤한다.
+    /// 움직임이 멈춘 뒤 한 번만 한다.
+    var revealTimer: Timer?
+
+    func scheduleRevealCaret(after delay: TimeInterval = 0.35) {
+        guard settings.followCaret else { return }
+        revealTimer?.invalidate()
+        let t = Timer(timeInterval: delay, repeats: false) { [weak self] _ in self?.revealCaret() }
+        RunLoop.main.add(t, forMode: .common)
+        revealTimer = t
+    }
+
+    func revealCaret() {
+        guard addBuffer == nil, staged.isEmpty else { return }
+        let proxy = textDocumentProxy
+        let mark = "\u{200B}"
+        ownEditTime = Date()
+        proxy.insertText(mark)
+        // 글자 수 제한 등으로 들어가지 않았으면 지우지 않는다 (진짜 글자를 지우면 안 된다)
+        if (proxy.documentContextBeforeInput ?? "").hasSuffix(mark) {
+            proxy.deleteBackward()
+        }
+        ctxCache = nil
+    }
+
     /// 줄 처음 / 줄 끝으로
     func moveToLineEdge(start: Bool) {
         flushStaged()
@@ -1993,6 +2021,7 @@ final class KeyboardViewController: UIInputViewController {
     @objc func cursorLeft() {
         resetComposer()
         flushStaged()
+        scheduleRevealCaret()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
         ctxCache = nil
     }
@@ -2000,6 +2029,7 @@ final class KeyboardViewController: UIInputViewController {
     @objc func cursorRight() {
         resetComposer()
         flushStaged()
+        scheduleRevealCaret()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: 1)
         ctxCache = nil
     }

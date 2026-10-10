@@ -119,6 +119,12 @@ final class Settings {
         get { min(max(d.object(forKey: "stagedMode2") as? Int ?? 2, 0), 3) }
         set { d.set(min(max(newValue, 0), 3), forKey: "stagedMode2") }
     }
+    /// 커서를 옮긴 뒤 앱 화면이 커서를 따라 스크롤되게 (보이지 않는 글자를 넣었다 지운다)
+    var followCaret: Bool {
+        get { d.object(forKey: "followCaret") as? Bool ?? true }
+        set { d.set(newValue, forKey: "followCaret") }
+    }
+
     /// 상단바(도구 줄)를 접어 두었는지. 접으면 [한][▦] + 추천 줄 한 줄만 보인다.
     var toolbarCollapsed: Bool {
         get { d.bool(forKey: "toolbarCollapsed") }
