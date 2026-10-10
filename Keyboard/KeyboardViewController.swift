@@ -292,7 +292,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 키보드 높이 = 추천 줄 + 상단바 + 자판. 상단바 높이와 키 높이(%)는 설정에서 고른다.
     /// 추천 줄이 없는 화면(클립보드, 설정 …)은 전체 높이는 같고 상단바를 조금 더 띄운다.
     func rebuildHeights() {
-        let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
+        let showBar = panel == .keys || panel == .symbols || panel == .numpad
         let p = CGFloat(settings.keyHeightPercent) / 100
         let t = CGFloat(settings.toolbarHeightValue) - (isLandscape ? 6 : 0)
         // 자판 영역 최대 높이 (100% 일 때): 세로 252, 가로 164
@@ -731,9 +731,9 @@ final class KeyboardViewController: UIInputViewController {
         view.backgroundColor = UIColor(white: isDark ? 0 : 1, alpha: 0.015)
         bandView.backgroundColor = view.backgroundColor
         divider.backgroundColor = theme.divider.withAlphaComponent(isDark ? 0.6 : 0.45)
-        // 추천 줄은 글자 자판·숫자 화면·이모지에서만 (다른 패널은 그만큼 넓게 쓴다)
+        // 추천 줄은 글자 자판·숫자 화면에서만 (이모지는 클립보드·설정처럼 상단바가 맨 위) (다른 패널은 그만큼 넓게 쓴다)
         // 단어 추가 중에는 같은 자리에 입력 칸을 올려서 키 높이가 바뀌지 않게 한다
-        let showBar = panel == .keys || panel == .symbols || panel == .numpad || panel == .emoji
+        let showBar = panel == .keys || panel == .symbols || panel == .numpad
         suggestBar.isHidden = !showBar
         // 가로 화면은 세로 공간이 좁아서 전체를 낮춘다 (세로 336 → 가로 236)
         rebuildHeights()
@@ -742,8 +742,6 @@ final class KeyboardViewController: UIInputViewController {
         suggestScroll.isHidden = false
         if adding && (panel == .keys || panel == .symbols) {
             buildAddRow()
-        } else if panel == .emoji {
-            buildEmojiTabs()
         }
         buildToolbar()
         buildBody()

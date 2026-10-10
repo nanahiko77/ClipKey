@@ -164,21 +164,21 @@ final class GridPanel: NSObject, UICollectionViewDataSource, UICollectionViewDel
 
 extension KeyboardViewController {
 
-    /// 추천 줄 자리: [이모지 | 스티커 | 기호]
-    func buildEmojiTabs() {
-        barOverlay.isHidden = false
-        suggestScroll.isHidden = true
+    /// 본문 맨 위: [이모지 | 스티커 | 기호] (상단바 바로 아래)
+    func makeEmojiTabs() -> UIView {
         let seg = UISegmentedControl(items: ["이모지", "스티커", "기호"])
         seg.selectedSegmentIndex = emojiTab
         seg.addTarget(self, action: #selector(emojiTabChanged(_:)), for: .valueChanged)
         seg.translatesAutoresizingMaskIntoConstraints = false
-        barOverlay.addSubview(seg)
+        let holder = UIView()
+        holder.addSubview(seg)
         NSLayoutConstraint.activate([
-            seg.centerXAnchor.constraint(equalTo: barOverlay.centerXAnchor),
-            seg.centerYAnchor.constraint(equalTo: barOverlay.centerYAnchor, constant: 4),
+            seg.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
+            seg.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
             seg.widthAnchor.constraint(equalToConstant: 252),
             seg.heightAnchor.constraint(equalToConstant: 28),
         ])
+        return holder
     }
 
     @objc func emojiTabChanged(_ s: UISegmentedControl) {
@@ -191,38 +191,58 @@ extension KeyboardViewController {
         rebuild()
     }
 
-    /// 도구 줄 자리: 이모지 분류, 또는 스티커 팩
+    /// 상단바: 클립보드·설정과 같은 [한] [ENG] [📋] [😊] ··· ([🔍]) [⚙]
     func buildEmojiToolbar() {
-        func pill(_ b: UIButton, on: Bool, width: CGFloat = 36) -> UIButton {
+        toolbar.addArrangedSubview(toolButton("한", width: 40, label: "한글 자판으로", action: #selector(toHangul)))
+        toolbar.addArrangedSubview(toolButton("ENG", width: 48, label: "영문 자판으로", action: #selector(toEnglish)))
+        toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
+                                              label: "클립보드 열기", action: #selector(clipTapped)))
+        toolbar.addArrangedSubview(toolButton(symbol: "smile", width: 40, active: true,
+                                              label: "이모지 닫기", action: #selector(backToKeys)))
+        toolbar.addArrangedSubview(toolbarSpacer())
+        if emojiTab == 0 {
+            toolbar.addArrangedSubview(toolButton(symbol: "search", width: 40, plain: true,
+                                                  label: "이모지 검색", action: #selector(startEmojiSearch)))
+        }
+        toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, plain: true,
+                                              label: "설정 열기", action: #selector(openSettings)))
+    }
+
+    /// 맨 아래 줄 가운데: 이모지 분류 아이콘, 또는 스티커 팩 + [추가]
+    func emojiBottomMiddle() -> UIView {
+        func pill(_ b: UIButton, on: Bool) -> UIButton {
             b.backgroundColor = on ? theme.funcKey : .clear
             b.alpha = on ? 1 : 0.55
             b.layer.cornerRadius = 8
-            b.widthAnchor.constraint(equalToConstant: width).isActive = true
             b.heightAnchor.constraint(equalToConstant: 34).isActive = true
             return b
         }
         if emojiTab == 0 {
             let icons = ["🕘"] + EmojiData.categories.map { $0.icon }
             let names = ["자주 쓰는 이모지"] + EmojiData.categories.map { $0.name }
-            toolbar.distribution = .equalSpacing
-            // 맨 앞: 이모지 검색
-            let search = toolButton(symbol: "search", width: 33, label: "이모지 검색", action: #selector(startEmojiSearch))
-            search.backgroundColor = theme.key
-            search.heightAnchor.constraint(equalToConstant: 34).isActive = true
-            toolbar.addArrangedSubview(search)
+            var views: [UIView] = []
             for (i, icon) in icons.enumerated() {
                 let b = UIButton(type: .system)
                 b.setTitle(icon, for: .normal)
-                b.titleLabel?.font = .systemFont(ofSize: 19)
+                b.titleLabel?.font = .systemFont(ofSize: 18)
                 b.tag = i
                 b.accessibilityLabel = names[i]
                 b.addTarget(self, action: #selector(emojiCategoryTapped(_:)), for: .touchUpInside)
-                toolbar.addArrangedSubview(pill(b, on: i == emojiCategory, width: 31))
+                views.append(pill(b, on: i == emojiCategory))
             }
-            return
+            let row = UIStackView(arrangedSubviews: views)
+            row.axis = .horizontal
+            row.alignment = .center
+            row.distribution = .fillEqually
+            row.spacing = 1
+            return row
         }
         let packs = stickers.packs
         if stickerPack >= packs.count { stickerPack = 0 }
+        let packRow = UIStackView()
+        packRow.axis = .horizontal
+        packRow.alignment = .center
+        packRow.spacing = 4
         for (i, p) in packs.enumerated() {
             let b = UIButton(type: .custom)
             if let first = p.items.first, let img = UIImage(contentsOfFile: stickers.thumbURL(first).path) {
@@ -239,19 +259,37 @@ extension KeyboardViewController {
             b.accessibilityLabel = p.name
             b.addTarget(self, action: #selector(stickerPackTapped(_:)), for: .touchUpInside)
             b.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(stickerPackLongPressed(_:))))
-            toolbar.addArrangedSubview(pill(b, on: i == stickerPack))
+            b.widthAnchor.constraint(equalToConstant: 34).isActive = true
+            packRow.addArrangedSubview(pill(b, on: i == stickerPack))
         }
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        toolbar.addArrangedSubview(spacer)
+        // 팩이 많으면 옆으로 밀어서 본다
+        let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        packRow.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(packRow)
+        NSLayoutConstraint.activate([
+            packRow.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            packRow.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            packRow.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            packRow.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            packRow.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+        ])
+        scroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let add = toolButton("추가", symbol: "plus", action: #selector(openStickerPicker))
         add.titleLabel?.font = .boldSystemFont(ofSize: 14)
         add.backgroundColor = theme.key
         add.layer.cornerRadius = 15
         add.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        add.setContentHuggingPriority(.required, for: .horizontal)
+        add.setContentCompressionResistancePriority(.required, for: .horizontal)
         add.accessibilityLabel = "클립보드 사진으로 스티커 추가"
-        toolbar.addArrangedSubview(add)
+        let row = UIStackView(arrangedSubviews: [scroll, add])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 6
+        scroll.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        return row
     }
 
     @objc func emojiCategoryTapped(_ b: UIButton) {
@@ -264,7 +302,7 @@ extension KeyboardViewController {
         rebuild()
     }
 
-    /// 본문: 위에 작은 제목, 가운데 격자, 아래 [가] [간격] [지우기]
+    /// 본문: 맨 위 [이모지|스티커|기호] 탭, 작은 제목, 가운데 격자, 아래 [가] 분류(또는 팩) [지우기]
     func buildEmojiBody() {
         let title = UILabel()
         title.font = .systemFont(ofSize: 11)
@@ -296,7 +334,7 @@ extension KeyboardViewController {
             let packs = stickers.packs
             if packs.isEmpty {
                 title.text = "내 스티커"
-                gridView = emptyLabel("클립보드에 저장된 사진으로 스티커 팩을 만들 수 있어요.\n위의 [+ 추가]를 누르세요. 누르면 복사되고, 입력 칸에 붙여넣어 보냅니다.")
+                gridView = emptyLabel("클립보드에 저장된 사진으로 스티커 팩을 만들 수 있어요.\n아래 [+ 추가]를 누르세요. 누르면 복사되고, 입력 칸에 붙여넣어 보냅니다.")
             } else {
                 let pack = packs[min(stickerPack, packs.count - 1)]
                 title.text = "\(pack.name) · \(pack.items.count)개 · 누르면 복사 · 길게 누르면 크게 보기"
@@ -321,13 +359,18 @@ extension KeyboardViewController {
 
         let back = makeKey(lang == .hangul ? "가" : "ABC", id: "tokeys", fn: true, font: 16)
         back.accessibilityLabel = "글자 자판으로"
-        let bottom = hstack([fixed(back, 52), spaceKey(), fixed(backspaceKey(), 52)], spacing: 6, equal: false)
-        for v in [title, gridView, bottom] as [UIView] {
+        let bottom = hstack([fixed(back, 44), emojiBottomMiddle(), fixed(backspaceKey(), 44)], spacing: 4, equal: false)
+        let tabs = makeEmojiTabs()
+        for v in [tabs, title, gridView, bottom] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             keyArea.addSubview(v)
         }
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: keyArea.topAnchor, constant: 4),
+            tabs.topAnchor.constraint(equalTo: keyArea.topAnchor, constant: 2),
+            tabs.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor),
+            tabs.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor),
+            tabs.heightAnchor.constraint(equalToConstant: 32),
+            title.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 2),
             title.leadingAnchor.constraint(equalTo: keyArea.leadingAnchor, constant: 10),
             title.trailingAnchor.constraint(equalTo: keyArea.trailingAnchor, constant: -10),
             title.heightAnchor.constraint(equalToConstant: 16),

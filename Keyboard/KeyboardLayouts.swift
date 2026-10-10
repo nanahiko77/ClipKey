@@ -227,8 +227,8 @@ extension KeyboardViewController {
             toolbar.addArrangedSubview(toolButton(symbol: "slider.horizontal.3", width: 40, plain: true,
                                                   label: "설정 열기", action: #selector(openSettings)))
         case .settings:
-            toolbar.addArrangedSubview(toolButton("한", width: 44, label: "한글 자판으로", action: #selector(toHangul)))
-            toolbar.addArrangedSubview(toolButton("ENG", width: 52, label: "영문 자판으로", action: #selector(toEnglish)))
+            toolbar.addArrangedSubview(toolButton("한", width: 40, label: "한글 자판으로", action: #selector(toHangul)))
+            toolbar.addArrangedSubview(toolButton("ENG", width: 48, label: "영문 자판으로", action: #selector(toEnglish)))
             toolbar.addArrangedSubview(toolButton(symbol: "clipboard", width: 40, plain: true,
                                                   label: "클립보드 열기", action: #selector(clipTapped)))
             toolbar.addArrangedSubview(toolButton(symbol: "smile", width: 40, plain: true,
