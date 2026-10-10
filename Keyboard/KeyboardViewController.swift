@@ -122,7 +122,7 @@ final class KeyboardViewController: UIInputViewController {
     /// 추천 줄 (B안: 도구 줄 위에 따로 둔다). 글자 자판·숫자 화면에서만 보인다.
     let suggestBar = UIView()
     var suggestBarHeight: NSLayoutConstraint?
-    static let suggestBarFull: CGFloat = 34
+    static let suggestBarFull: CGFloat = 28
     /// 상단바에서 단어 추가를 열었으면 저장·취소 뒤 글자 자판으로 돌아간다
     var addReturnPanel: Panel?
     // 밀어서 연속 입력 중인 키
@@ -224,7 +224,7 @@ final class KeyboardViewController: UIInputViewController {
         suggestScroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
         suggestScroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            suggestScroll.heightAnchor.constraint(equalToConstant: 34),
+            suggestScroll.heightAnchor.constraint(equalToConstant: 28),
             suggestStack.topAnchor.constraint(equalTo: suggestScroll.contentLayoutGuide.topAnchor),
             suggestStack.bottomAnchor.constraint(equalTo: suggestScroll.contentLayoutGuide.bottomAnchor),
             suggestStack.leadingAnchor.constraint(equalTo: suggestScroll.contentLayoutGuide.leadingAnchor),
@@ -236,7 +236,9 @@ final class KeyboardViewController: UIInputViewController {
             v.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(v)
         }
-        suggestBar.clipsToBounds = true
+        // 추천 글자를 조금 더 위로 (기본 키보드처럼 위 여백을 줄인다). 4pt 만큼은 줄 밖으로 그려도 되게.
+        suggestBar.clipsToBounds = false
+        suggestScroll.transform = CGAffineTransform(translationX: 0, y: -4)
         suggestScroll.translatesAutoresizingMaskIntoConstraints = false
         suggestBar.addSubview(suggestScroll)
         let barHeight = suggestBar.heightAnchor.constraint(equalToConstant: KeyboardViewController.suggestBarFull)
@@ -273,8 +275,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     func rebuildHeights() {
-        // 추천 줄을 38 → 34 로 낮춘 만큼 전체도 낮춘다 (키 크기는 그대로)
-        viewHeight?.constant = (isLandscape ? 236 : 332) - topLift
+        // 추천 줄을 38 → 28 로 낮춘 만큼 전체도 낮춘다 (키 크기는 그대로)
+        viewHeight?.constant = (isLandscape ? 232 : 326) - topLift
     }
 
     func suggestTopConstraint() -> NSLayoutConstraint {
@@ -542,7 +544,7 @@ final class KeyboardViewController: UIInputViewController {
         suggestBar.isHidden = !showBar
         // 가로 화면은 세로 공간이 좁아서 전체를 낮춘다 (세로 336 → 가로 236)
         rebuildHeights()
-        suggestBarHeight?.constant = showBar ? (isLandscape ? 32 : KeyboardViewController.suggestBarFull) : 0
+        suggestBarHeight?.constant = showBar ? KeyboardViewController.suggestBarFull : 0
         // 추천 줄이 없는 화면(클립보드, 설정 …)은 도구 줄이 맨 위라, iOS 키보드 판의 둥근 모서리와 붙지 않게 위를 띄운다
         toolbar.layoutMargins.top = showBar ? 2 : (isLandscape ? 6 : 10)
         toolbar.layoutMargins.bottom = isLandscape ? 2 : 8
@@ -1820,7 +1822,7 @@ final class KeyboardViewController: UIInputViewController {
         b.backgroundColor = onBar ? Theme.hex(isDark ? 0x5A5E66 : 0x4A4D54) : theme.key
         b.layer.cornerRadius = 15
         b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 12)
-        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        b.heightAnchor.constraint(equalToConstant: 26).isActive = true
         b.setContentHuggingPriority(.required, for: .horizontal)
         b.setContentCompressionResistancePriority(.required, for: .horizontal)
         return b
@@ -1902,7 +1904,7 @@ final class KeyboardViewController: UIInputViewController {
         row.spacing = 10
         let holder = UIView()
         holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        holder.heightAnchor.constraint(equalToConstant: 28).isActive = true
         // 너비는 화면에 붙인 뒤에 건다 (먼저 걸면 키보드가 종료된다)
         suggestStack.addArrangedSubview(holder)
         holder.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor).isActive = true
@@ -1972,7 +1974,7 @@ final class KeyboardViewController: UIInputViewController {
         for (pos, index) in [left, center, right].enumerated() {
             let slot = UIView()
             slot.translatesAutoresizingMaskIntoConstraints = false
-            slot.heightAnchor.constraint(equalToConstant: 34).isActive = true
+            slot.heightAnchor.constraint(equalToConstant: 28).isActive = true
             // 칸 너비는 추천 영역의 1/3. 화면에 붙인 뒤에 걸어야 한다 (먼저 걸면 키보드가 종료된다)
             suggestStack.addArrangedSubview(slot)
             slot.widthAnchor.constraint(equalTo: suggestScroll.frameLayoutGuide.widthAnchor, multiplier: 1.0 / 3.0,
@@ -2053,7 +2055,7 @@ final class KeyboardViewController: UIInputViewController {
             b.backgroundColor = armed ? theme.danger : theme.key.withAlphaComponent(isDark ? 0.35 : 0.6)
             b.layer.cornerRadius = 15
             b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 0, right: 10)
-            b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 26).isActive = true
         } else {
             b.setTitle(title, for: .normal)
             let strong = item.kind == .correction
@@ -2077,7 +2079,7 @@ final class KeyboardViewController: UIInputViewController {
         b.backgroundColor = theme.key
         b.layer.cornerRadius = 15
         b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
-        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        b.heightAnchor.constraint(equalToConstant: 26).isActive = true
         if let undo = undo {
             b.accessibilityLabel = undo + "로 되돌리기"
             b.addTarget(self, action: #selector(undoChipTapped), for: .touchUpInside)
