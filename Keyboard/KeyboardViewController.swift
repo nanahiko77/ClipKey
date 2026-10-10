@@ -530,6 +530,7 @@ final class KeyboardViewController: UIInputViewController {
         pasteTimer = nil
         stopDelete()
         resetComposer()
+        flushStaged()
         cursorPad = false
         addBuffer = nil
         cursorDragging = false
@@ -592,6 +593,7 @@ final class KeyboardViewController: UIInputViewController {
 
     func rebuild() {
         if panel != .keys { cursorPad = false }      // 다른 화면으로 가면 패드는 닫는다
+        if panel != .keys || cursorPad { resetComposer(); flushStaged() }
         resolveTheme()
         disarm()
         // 바탕은 투명하게: iOS 가 깐 키보드 판의 색이 그대로 보여 경계 없이 하나로 보인다
@@ -699,6 +701,10 @@ final class KeyboardViewController: UIInputViewController {
             if ctxCache == nil { ctxCache = textDocumentProxy.documentContextBeforeInput ?? "" }
             return ctxCache
         }
+        if !staged.isEmpty {
+            // 입력 칸에 아직 보내지 않은 글자까지 앞 글자로 본다
+            return (textDocumentProxy.documentContextBeforeInput ?? "") + staged
+        }
         let ctx = textDocumentProxy.documentContextBeforeInput
         // 조합 중 글자를 앞 글자에 넣어 주지 않는 앱도 있어서, 빠져 있으면 붙여서 본다
         if marked, !composing.isEmpty, !(ctx ?? "").hasSuffix(composing) {
@@ -746,7 +752,40 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// 조합 중 글자를 marked text 로 다룰지 (단어 추가 칸은 키보드 안의 글자라 해당 없음)
-    var marked: Bool { settings.markedComposing && addBuffer == nil }
+    var marked: Bool { settings.markedComposing && addBuffer == nil && !settings.stagedInput }
+
+    // MARK: - 입력 영역 (웹 입력창 깜빡임 줄이기)
+
+    /// 입력 영역을 쓸 때 앱에 아직 보내지 않은 글자. 단어가 끝나면(간격·문장부호·줄바꿈) 한 번에 보낸다.
+    /// 사파리 웹 입력창은 글자를 지웠다 다시 넣을 때마다 커서가 깜빡여서, 조합 중에는 앱을 건드리지 않는다.
+    var staged = ""
+    var stagedTimer: Timer?
+
+    var staging: Bool { settings.stagedInput && addBuffer == nil }
+
+    /// 모아 둔 글자를 앱에 보낸다
+    func flushStaged() {
+        stagedTimer?.invalidate()
+        stagedTimer = nil
+        guard !staged.isEmpty else { return }
+        let t = staged
+        staged = ""
+        ownEditTime = Date()
+        textDocumentProxy.insertText(t)
+        lastSuggestSignature = nil
+    }
+
+    /// 손을 잠깐 멈추면 보낸다 (입력 영역에만 오래 남아 있지 않게)
+    func scheduleStagedFlush() {
+        stagedTimer?.invalidate()
+        let t = Timer(timeInterval: 1.5, repeats: false) { [weak self] _ in
+            self?.resetComposer()
+            self?.flushStaged()
+            self?.refreshSuggestions()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        stagedTimer = t
+    }
 
     /// 조합 중 글자를 문서에서 지운다
     func clearComposingText() {
@@ -770,6 +809,14 @@ final class KeyboardViewController: UIInputViewController {
         if addBuffer != nil {
             addBuffer?.append(s)
             updateAddField()
+        } else if staging {
+            staged += s
+            // 단어가 끝나는 글자(간격·문장부호·줄바꿈 등)가 들어오면 한 번에 보낸다
+            if s.contains(where: { !($0.isLetter || $0.isNumber) }) {
+                flushStaged()
+            } else {
+                scheduleStagedFlush()
+            }
         } else {
             proxyDo { $0.insertText(s) }
         }
@@ -782,6 +829,9 @@ final class KeyboardViewController: UIInputViewController {
         if let b = addBuffer {
             if !b.isEmpty { addBuffer?.removeLast() }
             updateAddField()
+        } else if !staged.isEmpty {
+            staged.removeLast()
+            if staging { scheduleStagedFlush() }
         } else {
             proxyDo { $0.deleteBackward() }
         }
@@ -1438,6 +1488,7 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         deletedAllText = ""
+        flushStaged()
         moveToDocumentEnd(0) { [weak self] in self?.deleteAllPass(0) }
     }
 
@@ -1587,6 +1638,7 @@ final class KeyboardViewController: UIInputViewController {
     func moveCursorLines(_ lines: Int) {
         guard lines != 0 else { return }
         resetComposer()
+        flushStaged()
         let proxy = textDocumentProxy
         if lines < 0 {
             let before = proxy.documentContextBeforeInput ?? ""
@@ -1682,6 +1734,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 묶음을 거꾸로 적용한다: 커서 앞이 `drop` 으로 끝나야 지우고 `put` 을 넣는다
     private func applyEdit(drop: String, put: String) -> Bool {
+        flushStaged()
         guard (textDocumentProxy.documentContextBeforeInput ?? "").hasSuffix(drop) else { return false }
         editRecording = false
         for _ in 0..<drop.count { docDelete() }
@@ -1726,6 +1779,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 줄 처음 / 줄 끝으로
     func moveToLineEdge(start: Bool) {
+        flushStaged()
         let proxy = textDocumentProxy
         if start {
             let before = proxy.documentContextBeforeInput ?? ""
@@ -1740,6 +1794,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// 단어 단위로: 띄어쓰기를 건너뛴 뒤 다음 띄어쓰기(또는 줄바꿈)까지
     func moveByWord(forward: Bool) {
+        flushStaged()
         let proxy = textDocumentProxy
         if forward {
             let after = Array(proxy.documentContextAfterInput ?? "")
@@ -1761,12 +1816,14 @@ final class KeyboardViewController: UIInputViewController {
 
     @objc func cursorLeft() {
         resetComposer()
+        flushStaged()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
         ctxCache = nil
     }
 
     @objc func cursorRight() {
         resetComposer()
+        flushStaged()
         textDocumentProxy.adjustTextPosition(byCharacterOffset: 1)
         ctxCache = nil
     }
@@ -1955,7 +2012,7 @@ final class KeyboardViewController: UIInputViewController {
 
         // 지난번과 같으면 화면을 건드리지 않는다
         let undo = correctionChipVisible ? lastCorrection?.original : nil
-        var signature = "\(typing)|\(clip?.id.uuidString ?? "")|\(armedSuggestion ?? "")|\(isDark)|\(undo ?? "")"
+        var signature = "\(typing)|\(clip?.id.uuidString ?? "")|\(armedSuggestion ?? "")|\(isDark)|\(undo ?? "")|\(staged)"
         for item in items { signature += "|\(item.kind):\(item.text)" }
         if signature == lastSuggestSignature { return }
         lastSuggestSignature = signature
@@ -1964,6 +2021,27 @@ final class KeyboardViewController: UIInputViewController {
         suggestStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         suggestItems = items
 
+        var stagedWidth: CGFloat = 0
+        if !staged.isEmpty {
+            // 입력 영역: 아직 앱에 보내지 않은 글자를 맨 앞에 보여 준다 (커서 막대와 함께)
+            let l = UILabel()
+            l.text = " " + staged + "▏"
+            l.font = .boldSystemFont(ofSize: 16)
+            l.textColor = theme.text
+            l.backgroundColor = theme.letterKey
+            l.layer.cornerRadius = 7
+            l.layer.masksToBounds = true
+            l.layer.borderWidth = 1.5
+            l.layer.borderColor = UIColor.systemBlue.cgColor
+            l.textAlignment = .center
+            l.lineBreakMode = .byTruncatingHead
+            let w = min(160, l.intrinsicContentSize.width + 12)
+            l.widthAnchor.constraint(equalToConstant: w).isActive = true
+            l.heightAnchor.constraint(equalToConstant: 26).isActive = true
+            suggestStack.addArrangedSubview(l)
+            suggestStack.setCustomSpacing(6, after: l)
+            stagedWidth = w + 6
+        }
         if let undo = undo {
             // 방금 자동으로 고쳤으면 되돌리기 칩을 먼저 보여 준다
             let chip = undoChip(undo, bold: false)
@@ -1979,7 +2057,7 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         if typing && !items.isEmpty {
-            buildSlots(items, reserved: undo == nil ? 0 : undoChipWidth(undo ?? "") + 6)
+            buildSlots(items, reserved: (undo == nil ? 0 : undoChipWidth(undo ?? "") + 6) + stagedWidth)
         } else if !typing, clip == nil, undo == nil, !items.isEmpty,
                   items.allSatisfy({ $0.kind == .next }) {
             // 치기 전: 기본 키보드처럼 같은 폭 세 칸 (강조 없이)

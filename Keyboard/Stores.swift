@@ -113,6 +113,12 @@ final class Settings {
         get { min(max(d.double(forKey: "longPressTime"), Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound) }
         set { d.set(min(max(newValue, Settings.longPressRange.lowerBound), Settings.longPressRange.upperBound), forKey: "longPressTime") }
     }
+    /// 입력 영역: 단어를 키보드 안에서 다 친 뒤 앱에 한 번에 보낸다 (사파리 웹 입력창 깜빡임 줄이기)
+    var stagedInput: Bool {
+        get { d.bool(forKey: "stagedInput") }
+        set { d.set(newValue, forKey: "stagedInput") }
+    }
+
     /// 나랏글 줄바꿈 키를 한 줄 위(123 .,?! 자리)로
     var naraReturnUp: Bool {
         get { d.bool(forKey: "naraReturnUp") }
